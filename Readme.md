@@ -15,6 +15,7 @@ A Spring Boot based distributed job scheduler that accepts background jobs via a
 - [Job Types](#job-types)
 - [Persistence Model](#persistence-model)
 - [Kafka Topics and Redis Keys](#kafka-topics-and-redis-keys)
+- [Local Infrastructure](#local-infrastructure)
 - [Configuration](#configuration)
 - [Package Layout](#package-layout)
 - [Status](#status)
@@ -155,7 +156,8 @@ stateDiagram-v2
     QUEUED --> PENDING : queued watchdog reset
     RUNNING --> PENDING : running watchdog reset
 
-    PENDING --> CANCELED : reserved
+    PENDING --> CANCELED : canceled by API
+    QUEUED --> CANCELED : canceled by API
 
     SUCCESS --> [*]
     DEAD --> [*]
@@ -170,7 +172,7 @@ stateDiagram-v2
 | `SUCCESS` | Terminal success for one-time jobs |
 | `FAILED` | Transient failure before retry or `DEAD` |
 | `DEAD` | Terminal failure after max attempts or permanent error |
-| `CANCELED` | Reserved for future cancellation support |
+| `CANCELED` | Terminal state for jobs canceled before execution starts |
 
 ---
 
@@ -289,16 +291,106 @@ Webhook and mail sends have explicit timeouts to prevent worker threads from han
 
 ## REST API
 
-Base path: `/app/v1/jobs`
-
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/app/v1/jobs` | Submit a new job |
-| `GET` | `/app/v1/jobs` | List jobs, newest first |
+| `GET` | `/app/v1/jobs` | List jobs with pagination and optional filters |
 | `GET` | `/app/v1/jobs/dead` | List dead jobs |
 | `GET` | `/app/v1/jobs/{jobId}` | Get job detail |
 | `GET` | `/app/v1/jobs/{jobId}/logs` | Get execution logs |
 | `POST` | `/app/v1/jobs/{jobId}/requeue` | Re-create a dead job |
+| `POST` | `/app/v1/jobs/{jobId}/cancel` | Cancel a pending or queued job |
+| `GET` | `/app/v1/dlq` | Inspect dead-letter jobs with pagination and filters |
+| `GET` | `/app/v1/dlq/{jobId}` | Inspect one dead-letter job with execution logs |
+
+### List Jobs Query Parameters
+
+`GET /app/v1/jobs` returns a paginated response sorted by newest jobs first.
+
+| Parameter | Required | Example | Purpose |
+|---|---|---|---|
+| `status` | No | `PENDING` | Filter by job status |
+| `type` | No | `WEBHOOK` | Filter by job type |
+| `priority` | No | `HIGH` | Filter by job priority |
+| `createdFrom` | No | `2026-04-01T00:00:00Z` | Include jobs created at or after this time |
+| `createdTo` | No | `2026-04-22T23:59:59Z` | Include jobs created at or before this time |
+| `page` | No | `0` | Zero-based page number. Defaults to `0` |
+| `size` | No | `20` | Page size. Defaults to `20`, capped at `100` |
+
+Example:
+
+```text
+GET /app/v1/jobs?status=PENDING&type=WEBHOOK&priority=HIGH&page=0&size=10
+```
+
+Response shape:
+
+```json
+{
+  "content": [],
+  "page": 0,
+  "size": 10,
+  "totalElements": 0,
+  "totalPages": 0,
+  "first": true,
+  "last": true
+}
+```
+
+### Cancellation
+
+`POST /app/v1/jobs/{jobId}/cancel` cancels jobs that have not started running yet.
+
+Cancelable states:
+
+| State | Behavior |
+|---|---|
+| `PENDING` | Marked `CANCELED` and removed from scheduling |
+| `QUEUED` | Marked `CANCELED`; if Kafka later delivers the event, the worker skips it |
+
+Already terminal jobs and currently `RUNNING` jobs are rejected.
+
+### DLQ Inspection
+
+`GET /app/v1/dlq` returns only `DEAD` jobs and includes DLQ publish metadata, attempt counts, final errors, and requeue metadata.
+
+| Parameter | Required | Example | Purpose |
+|---|---|---|---|
+| `deadLetterStatus` | No | `PENDING` | Filter by DLQ publish state |
+| `type` | No | `WEBHOOK` | Filter by job type |
+| `priority` | No | `HIGH` | Filter by job priority |
+| `createdFrom` | No | `2026-04-01T00:00:00Z` | Include jobs created at or after this time |
+| `createdTo` | No | `2026-04-22T23:59:59Z` | Include jobs created at or before this time |
+| `page` | No | `0` | Zero-based page number. Defaults to `0` |
+| `size` | No | `20` | Page size. Defaults to `20`, capped at `100` |
+
+Example:
+
+```text
+GET /app/v1/dlq?deadLetterStatus=PENDING&type=WEBHOOK&page=0&size=10
+```
+
+Summary response items include:
+
+```json
+{
+  "jobId": "4b77f1d2-0000-0000-0000-000000000000",
+  "jobType": "WEBHOOK",
+  "jobPriority": "HIGH",
+  "lastErrorMessage": "Max attempts exceeded",
+  "attemptCount": 3,
+  "deadLetterStatus": "PENDING",
+  "deadLetterQueuedAt": "2026-04-22T03:30:10Z",
+  "deadLetterSentAt": null,
+  "deadLetterLastAttemptAt": "2026-04-22T03:30:12Z",
+  "nextDeadLetterAttemptAt": "2026-04-22T03:30:42Z",
+  "deadLetterErrorMessage": "Kafka timeout",
+  "requeuedFromJobId": null,
+  "requeuedAt": null
+}
+```
+
+`GET /app/v1/dlq/{jobId}` returns the full payload, final error, DLQ metadata, execution logs, and action flags such as `canRequeue` and `canRetryDeadLetterPublish`.
 
 ### Example Requests
 
@@ -312,7 +404,7 @@ Immediate webhook:
     "url": "https://example.com/webhook",
     "body": { "event": "demo" }
   },
-  "maxRetries": 3,
+  "maxAttempts": 3,
   "idempotencyKey": "webhook-demo-001"
 }
 ```
@@ -328,7 +420,7 @@ Recurring webhook:
     "url": "https://example.com/webhook",
     "body": { "event": "cron-demo" }
   },
-  "maxRetries": 3,
+  "maxAttempts": 3,
   "idempotencyKey": "webhook-cron-demo-001"
 }
 ```
@@ -340,7 +432,7 @@ Cleanup job:
   "jobType": "CLEANUP",
   "jobPriority": "LOW",
   "payload": { "olderThanDays": 30 },
-  "maxRetries": 3,
+  "maxAttempts": 3,
   "idempotencyKey": "cleanup-logs-30-days"
 }
 ```
@@ -372,7 +464,7 @@ erDiagram
         string job_priority
         jsonb payload
         string cron_expression
-        int max_retries
+        int max_attempts
         string idempotency_key UK
         timestamp next_run_at
         timestamp queued_at
@@ -439,9 +531,47 @@ erDiagram
 
 ---
 
+## Local Infrastructure
+
+The project includes a Docker Compose setup for the local dependencies:
+
+| Service | Port | Purpose |
+|---|---:|---|
+| PostgreSQL | `5432` | Durable job and execution log storage |
+| Kafka | `9092` | Job queue, high-priority queue, and DLQ |
+| Redis | `6379` | Worker locks and idempotency markers |
+
+Start the infrastructure:
+
+```bash
+docker compose up -d
+```
+
+Stop it:
+
+```bash
+docker compose down
+```
+
+Remove local volumes if you want a clean database, Kafka log, and Redis state:
+
+```bash
+docker compose down -v
+```
+
+---
+
 ## Configuration
 
 ```properties
+# Local infrastructure connections
+spring.datasource.url=jdbc:postgresql://localhost:5432/jobscheduler
+spring.datasource.username=postgres
+spring.datasource.password=postgres
+spring.kafka.bootstrap-servers=localhost:9092
+spring.data.redis.host=localhost
+spring.data.redis.port=6379
+
 # Scheduler toggle. Only one instance should run scheduling.
 scheduler.enabled=true
 scheduler.worker-id=worker-1
@@ -509,13 +639,14 @@ utility/      Key builders for locks and done markers
 ### Done
 
 - Job submission, listing, detail, and execution log APIs
-- Dead job listing and manual requeue API
+- Dead job listing, DLQ inspection, manual requeue, and cancellation APIs
 - Typed payload validation for email, webhook, and cleanup
 - PostgreSQL entities with indexes for scheduler and status queries
 - DB-backed due-job dispatch
 - Kafka producer and consumer flow
 - High-priority and normal queue routing
 - Durable dead-letter publishing with PostgreSQL-backed retry state
+- DLQ inspection views with attempt counts, final errors, and publish retry metadata
 - Redis lock with Lua ownership-safe release and renewal
 - Redis idempotency marker for completed one-time jobs
 - Redis health checks and Kafka listener pause/resume
@@ -525,21 +656,21 @@ utility/      Key builders for locks and done markers
 - `QUEUED` and `RUNNING` watchdogs
 - Single-scheduler-instance flag
 - `SEND_EMAIL`, `WEBHOOK`, and `CLEANUP` handlers
+- Docker Compose for local PostgreSQL, Kafka, and Redis
+- Pagination and filtering for the job list API
+- Cancellation support for pending and queued jobs
 
 ### Up Next
 
 - Runtime configuration profiles for Kafka, Redis, PostgreSQL, and Mail
 - Unit and integration tests for worker lifecycle, retry, cron, watchdogs, DLQ, and handler routing
 - Testcontainers for integration tests
-- Docker Compose for local infrastructure
-- Rename `maxRetries` to `maxAttempts` for accuracy
 
 ### Feature Roadmap
 
 - `REPORT` and `SCRAPE` handler implementations
 - SSE live updates for job status
 - Metrics: success rate, average duration, jobs per status/type
-- Pagination and filtering on list APIs
 - Structured API error responses
 - GitHub Actions CI
 - React dashboard
@@ -569,6 +700,9 @@ utility/      Key builders for locks and done markers
 ## Local Verification
 
 ```bash
+# Start PostgreSQL, Kafka, and Redis
+docker compose up -d
+
 # Compile only. No local infrastructure required.
 mvn -DskipTests compile
 ```

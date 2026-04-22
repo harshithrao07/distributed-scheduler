@@ -4,6 +4,7 @@ import com.job.scheduler.entity.Job;
 import com.job.scheduler.enums.DeadLetterStatus;
 import com.job.scheduler.enums.JobStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -11,7 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Repository
-public interface JobRepository extends JpaRepository<Job, UUID> {
+public interface JobRepository extends JpaRepository<Job, UUID>, JpaSpecificationExecutor<Job> {
     List<Job> findAllByOrderByCreatedAtDesc();
 
     List<Job> findByJobStatusOrderByUpdatedAtDesc(JobStatus jobStatus);

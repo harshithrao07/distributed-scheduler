@@ -1,10 +1,15 @@
 package com.job.scheduler.controller;
 
 import com.job.scheduler.dto.ExecutionLogDTO;
+import com.job.scheduler.dto.CancelJobResponseDTO;
 import com.job.scheduler.dto.JobDetailDTO;
+import com.job.scheduler.dto.JobPageDTO;
 import com.job.scheduler.dto.JobRequestDTO;
 import com.job.scheduler.dto.JobSummaryDTO;
 import com.job.scheduler.dto.RequeueJobResponseDTO;
+import com.job.scheduler.enums.JobPriority;
+import com.job.scheduler.enums.JobStatus;
+import com.job.scheduler.enums.JobType;
 import com.job.scheduler.service.JobService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -14,8 +19,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,8 +39,16 @@ public class JobController {
     }
 
     @GetMapping
-    public ResponseEntity<List<JobSummaryDTO>> getJobs() {
-        return ResponseEntity.ok(jobService.getJobs());
+    public ResponseEntity<JobPageDTO> getJobs(
+            @RequestParam(required = false) JobStatus status,
+            @RequestParam(required = false) JobType type,
+            @RequestParam(required = false) JobPriority priority,
+            @RequestParam(required = false) Instant createdFrom,
+            @RequestParam(required = false) Instant createdTo,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(jobService.getJobs(status, type, priority, createdFrom, createdTo, page, size));
     }
 
     @GetMapping("/dead")
@@ -54,5 +69,10 @@ public class JobController {
     @PostMapping("/{jobId}/requeue")
     public ResponseEntity<RequeueJobResponseDTO> requeueJob(@PathVariable UUID jobId) {
         return ResponseEntity.ok(jobService.requeueJob(jobId));
+    }
+
+    @PostMapping("/{jobId}/cancel")
+    public ResponseEntity<CancelJobResponseDTO> cancelJob(@PathVariable UUID jobId) {
+        return ResponseEntity.ok(jobService.cancelJob(jobId));
     }
 }

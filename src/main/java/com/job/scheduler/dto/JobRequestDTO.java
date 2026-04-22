@@ -12,7 +12,7 @@ public record JobRequestDTO(
         @NotNull(message = "Job Priority cannot be null") JobPriority jobPriority,
         @NotNull(message = "Payload cannot be null") JsonNode payload,
         String cronExpression,
-        @PositiveOrZero(message = "Max retries cannot be negative") Integer maxRetries,
+        @PositiveOrZero(message = "Max attempts cannot be negative") Integer maxAttempts,
         @NotBlank(message = "Idempotency Key cannot be blank") String idempotencyKey
 ) {
 }

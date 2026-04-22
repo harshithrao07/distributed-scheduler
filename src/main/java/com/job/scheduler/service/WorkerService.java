@@ -77,11 +77,10 @@ public class WorkerService {
                 return;
             }
 
-            // Check if the job has crossed the max retry value
-            // If crossed then manual intervention is required
-            if (jobService.maxRetriesExceeded(jobId)) {
+            // Check if the job has crossed the max attempt value.
+            if (jobService.maxAttemptsExceeded(jobId)) {
                 // Mark the job as DEAD
-                jobService.markJobDead(jobId, "Max retry attempts exceeded");
+                jobService.markJobDead(jobId, "Max attempts exceeded");
                 return;
             }
 
@@ -114,7 +113,7 @@ public class WorkerService {
             }
 
             if (e instanceof EntityNotFoundException || e instanceof IllegalArgumentException
-            || jobService.maxRetriesExceeded(jobId)) {
+            || jobService.maxAttemptsExceeded(jobId)) {
                 // Mark the job as DEAD
                 jobService.markJobDead(jobId, e.getMessage());
             } else {

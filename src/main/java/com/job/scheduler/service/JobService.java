@@ -2,8 +2,13 @@ package com.job.scheduler.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.job.scheduler.dto.CancelJobResponseDTO;
+import com.job.scheduler.dto.DlqJobDetailDTO;
+import com.job.scheduler.dto.DlqJobSummaryDTO;
+import com.job.scheduler.dto.DlqPageDTO;
 import com.job.scheduler.dto.ExecutionLogDTO;
 import com.job.scheduler.dto.JobDetailDTO;
+import com.job.scheduler.dto.JobPageDTO;
 import com.job.scheduler.dto.JobRequestDTO;
 import com.job.scheduler.dto.JobSummaryDTO;
 import com.job.scheduler.dto.RequeueJobResponseDTO;
@@ -13,22 +18,29 @@ import com.job.scheduler.dto.payload.WebhookPayload;
 import com.job.scheduler.entity.ExecutionLog;
 import com.job.scheduler.entity.Job;
 import com.job.scheduler.enums.DeadLetterStatus;
+import com.job.scheduler.enums.JobPriority;
 import com.job.scheduler.enums.JobStatus;
 import com.job.scheduler.enums.JobType;
 import com.job.scheduler.repository.ExecutionLogRepository;
 import com.job.scheduler.repository.JobRepository;
+import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -57,18 +69,38 @@ public class JobService {
         } else {
             job.setNextRunAt(Instant.now());
         }
-        job.setMaxRetries(jobRequestDTO.maxRetries() != null ? jobRequestDTO.maxRetries() : job.getMaxRetries());
+        job.setMaxAttempts(jobRequestDTO.maxAttempts() != null ? jobRequestDTO.maxAttempts() : job.getMaxAttempts());
         job.setIdempotencyKey(jobRequestDTO.idempotencyKey());
 
         Job savedJob = jobRepository.save(job);
         return savedJob.getId();
     }
 
-    public List<JobSummaryDTO> getJobs() {
-        return jobRepository.findAllByOrderByCreatedAtDesc()
-                .stream()
-                .map(this::toSummary)
-                .toList();
+    public JobPageDTO getJobs(
+            JobStatus status,
+            JobType type,
+            JobPriority priority,
+            Instant createdFrom,
+            Instant createdTo,
+            int page,
+            int size
+    ) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        PageRequest pageRequest = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<JobSummaryDTO> jobs = jobRepository.findAll(jobFilters(status, type, priority, createdFrom, createdTo), pageRequest)
+                .map(this::toSummary);
+
+        return new JobPageDTO(
+                jobs.getContent(),
+                jobs.getNumber(),
+                jobs.getSize(),
+                jobs.getTotalElements(),
+                jobs.getTotalPages(),
+                jobs.isFirst(),
+                jobs.isLast()
+        );
     }
 
     public List<JobSummaryDTO> getDeadJobs() {
@@ -76,6 +108,72 @@ public class JobService {
                 .stream()
                 .map(this::toSummary)
                 .toList();
+    }
+
+    public DlqPageDTO getDeadLetterJobs(
+            DeadLetterStatus deadLetterStatus,
+            JobType type,
+            JobPriority priority,
+            Instant createdFrom,
+            Instant createdTo,
+            int page,
+            int size
+    ) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        PageRequest pageRequest = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "updatedAt"));
+
+        Page<DlqJobSummaryDTO> jobs = jobRepository.findAll(
+                        deadLetterFilters(deadLetterStatus, type, priority, createdFrom, createdTo),
+                        pageRequest
+                )
+                .map(this::toDlqSummary);
+
+        return new DlqPageDTO(
+                jobs.getContent(),
+                jobs.getNumber(),
+                jobs.getSize(),
+                jobs.getTotalElements(),
+                jobs.getTotalPages(),
+                jobs.isFirst(),
+                jobs.isLast()
+        );
+    }
+
+    public DlqJobDetailDTO getDeadLetterJob(UUID jobId) {
+        Job job = findById(jobId);
+
+        if (job.getJobStatus() != JobStatus.DEAD) {
+            throw new IllegalStateException("Only DEAD jobs can be inspected through the DLQ API");
+        }
+
+        List<ExecutionLogDTO> executionLogs = executionLogRepository.findByJobIdOrderByAttemptNumberAsc(jobId)
+                .stream()
+                .map(this::toExecutionLog)
+                .toList();
+
+        return new DlqJobDetailDTO(
+                job.getId(),
+                job.getJobType(),
+                job.getJobPriority(),
+                job.getPayload(),
+                job.getCronExpression(),
+                job.getLastErrorMessage(),
+                getAttemptCount(job.getId()),
+                job.getDeadLetterStatus(),
+                job.getDeadLetterQueuedAt(),
+                job.getDeadLetterSentAt(),
+                job.getDeadLetterLastAttemptAt(),
+                job.getNextDeadLetterAttemptAt(),
+                job.getDeadLetterErrorMessage(),
+                job.getRequeuedFromJobId(),
+                job.getRequeuedAt(),
+                job.getCreatedAt(),
+                job.getUpdatedAt(),
+                executionLogs,
+                true,
+                job.getDeadLetterStatus() == DeadLetterStatus.PENDING
+        );
     }
 
     public JobDetailDTO getJob(UUID jobId) {
@@ -107,7 +205,7 @@ public class JobService {
         requeuedJob.setJobPriority(deadJob.getJobPriority());
         requeuedJob.setPayload(deadJob.getPayload());
         requeuedJob.setCronExpression(deadJob.getCronExpression());
-        requeuedJob.setMaxRetries(deadJob.getMaxRetries());
+        requeuedJob.setMaxAttempts(deadJob.getMaxAttempts());
         requeuedJob.setIdempotencyKey(deadJob.getIdempotencyKey() + ":requeue:" + UUID.randomUUID());
         requeuedJob.setNextRunAt(Instant.now());
         requeuedJob.setRequeuedFromJobId(deadJob.getId());
@@ -115,6 +213,31 @@ public class JobService {
 
         Job savedJob = jobRepository.save(requeuedJob);
         return new RequeueJobResponseDTO(savedJob.getId());
+    }
+
+    @Transactional
+    public CancelJobResponseDTO cancelJob(UUID jobId) {
+        Job job = findById(jobId);
+
+        if (job.getJobStatus() == JobStatus.SUCCESS
+                || job.getJobStatus() == JobStatus.DEAD
+                || job.getJobStatus() == JobStatus.CANCELED) {
+            throw new IllegalStateException("Only active jobs can be canceled");
+        }
+
+        if (job.getJobStatus() == JobStatus.RUNNING) {
+            throw new IllegalStateException("RUNNING jobs cannot be canceled");
+        }
+
+        job.setJobStatus(JobStatus.CANCELED);
+        job.setNextRunAt(null);
+        job.setQueuedAt(null);
+        job.setStartedAt(null);
+        job.setCompletedAt(Instant.now());
+        job.setLastErrorMessage("Canceled by request");
+
+        Job savedJob = jobRepository.save(job);
+        return new CancelJobResponseDTO(savedJob.getId(), savedJob.getJobStatus());
     }
 
     private void validateTypedPayload(JobType jobType, JsonNode payload) {
@@ -153,16 +276,16 @@ public class JobService {
             job.setStartedAt(Instant.now());
             job.setCompletedAt(null);
         }
-        if (jobStatus == JobStatus.SUCCESS || jobStatus == JobStatus.DEAD || jobStatus == JobStatus.RUNNING) {
+        if (jobStatus == JobStatus.SUCCESS || jobStatus == JobStatus.DEAD || jobStatus == JobStatus.RUNNING || jobStatus == JobStatus.CANCELED) {
             job.setNextRunAt(null);
         }
-        if (jobStatus == JobStatus.SUCCESS || jobStatus == JobStatus.DEAD) {
+        if (jobStatus == JobStatus.SUCCESS || jobStatus == JobStatus.DEAD || jobStatus == JobStatus.CANCELED) {
             job.setCompletedAt(Instant.now());
         }
         if (jobStatus == JobStatus.DEAD) {
             markDeadLetterPending(job, null);
         }
-        if (jobStatus == JobStatus.PENDING || jobStatus == JobStatus.RUNNING || jobStatus == JobStatus.SUCCESS || jobStatus == JobStatus.DEAD) {
+        if (jobStatus == JobStatus.PENDING || jobStatus == JobStatus.RUNNING || jobStatus == JobStatus.SUCCESS || jobStatus == JobStatus.DEAD || jobStatus == JobStatus.CANCELED) {
             job.setQueuedAt(null);
         }
         jobRepository.save(job);
@@ -277,9 +400,9 @@ public class JobService {
         jobRepository.save(job);
     }
 
-    public boolean maxRetriesExceeded(UUID jobId) {
+    public boolean maxAttemptsExceeded(UUID jobId) {
         Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
-        return getAttemptCount(jobId) >= job.getMaxRetries();
+        return getAttemptCount(jobId) >= job.getMaxAttempts();
     }
 
     public long getAttemptCount(UUID jobId) {
@@ -350,6 +473,87 @@ public class JobService {
         );
     }
 
+    private Specification<Job> jobFilters(
+            JobStatus status,
+            JobType type,
+            JobPriority priority,
+            Instant createdFrom,
+            Instant createdTo
+    ) {
+        return (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (status != null) {
+                predicates.add(criteriaBuilder.equal(root.get("jobStatus"), status));
+            }
+            if (type != null) {
+                predicates.add(criteriaBuilder.equal(root.get("jobType"), type));
+            }
+            if (priority != null) {
+                predicates.add(criteriaBuilder.equal(root.get("jobPriority"), priority));
+            }
+            if (createdFrom != null) {
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("createdAt"), createdFrom));
+            }
+            if (createdTo != null) {
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("createdAt"), createdTo));
+            }
+
+            return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private Specification<Job> deadLetterFilters(
+            DeadLetterStatus deadLetterStatus,
+            JobType type,
+            JobPriority priority,
+            Instant createdFrom,
+            Instant createdTo
+    ) {
+        return (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            predicates.add(criteriaBuilder.equal(root.get("jobStatus"), JobStatus.DEAD));
+            if (deadLetterStatus != null) {
+                predicates.add(criteriaBuilder.equal(root.get("deadLetterStatus"), deadLetterStatus));
+            }
+            if (type != null) {
+                predicates.add(criteriaBuilder.equal(root.get("jobType"), type));
+            }
+            if (priority != null) {
+                predicates.add(criteriaBuilder.equal(root.get("jobPriority"), priority));
+            }
+            if (createdFrom != null) {
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("createdAt"), createdFrom));
+            }
+            if (createdTo != null) {
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("createdAt"), createdTo));
+            }
+
+            return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private DlqJobSummaryDTO toDlqSummary(Job job) {
+        return new DlqJobSummaryDTO(
+                job.getId(),
+                job.getJobType(),
+                job.getJobPriority(),
+                job.getLastErrorMessage(),
+                getAttemptCount(job.getId()),
+                job.getDeadLetterStatus(),
+                job.getDeadLetterQueuedAt(),
+                job.getDeadLetterSentAt(),
+                job.getDeadLetterLastAttemptAt(),
+                job.getNextDeadLetterAttemptAt(),
+                job.getDeadLetterErrorMessage(),
+                job.getRequeuedFromJobId(),
+                job.getRequeuedAt(),
+                job.getCreatedAt(),
+                job.getUpdatedAt()
+        );
+    }
+
     private JobDetailDTO toDetail(Job job) {
         return new JobDetailDTO(
                 job.getId(),
@@ -358,7 +562,7 @@ public class JobService {
                 job.getJobPriority(),
                 job.getPayload(),
                 job.getCronExpression(),
-                job.getMaxRetries(),
+                job.getMaxAttempts(),
                 job.getIdempotencyKey(),
                 job.getNextRunAt(),
                 job.getQueuedAt(),

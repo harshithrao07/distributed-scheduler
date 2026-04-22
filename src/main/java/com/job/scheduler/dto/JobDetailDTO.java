@@ -16,7 +16,7 @@ public record JobDetailDTO(
         JobPriority jobPriority,
         JsonNode payload,
         String cronExpression,
-        int maxRetries,
+        int maxAttempts,
         String idempotencyKey,
         Instant nextRunAt,
         Instant queuedAt,

@@ -56,9 +56,9 @@ public class Job {
     @Column(name = "cron_expression")
     private String cronExpression;
 
-    @Column(name = "max_retries", nullable = false)
+    @Column(name = "max_attempts", nullable = false)
     @ColumnDefault("3")
-    private int maxRetries = 3;
+    private int maxAttempts = 3;
 
     @Column(name = "idempotency_key", nullable = false, unique = true)
     private String idempotencyKey;
