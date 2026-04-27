@@ -30,7 +30,8 @@ public class DueJobSchedulerService {
     @Value("${scheduler.due-job.dispatch-retry-delay-ms:5000}")
     private long dispatchRetryDelayMs;
 
-    // Pending Jobs
+    @Value("${scheduler.due-job.claim-limit:100}")
+    private int claimLimit;
 
     @Scheduled(fixedDelayString = "${scheduler.due-job.poll-delay-ms:${scheduler.retry.poll-delay-ms:1000}}")
     public void dispatchDueJobs() {
@@ -38,10 +39,14 @@ public class DueJobSchedulerService {
             return;
         }
 
-        List<Job> dueJobs = jobRepository.findByJobStatusAndNextRunAtLessThanEqual(JobStatus.PENDING, Instant.now());
+        Instant now = Instant.now();
+        List<Job> dueJobs = jobRepository.claimDueJobsForDispatch(
+                now,
+                now.plusMillis(dispatchRetryDelayMs),
+                claimLimit
+        );
 
         for (Job job : dueJobs) {
-            jobService.markDispatchAttempt(job.getId(), Instant.now().plusMillis(dispatchRetryDelayMs));
             JobDispatchEvent event = new JobDispatchEvent(job.getId(), job.getJobType());
             CompletableFuture<Void> sendFuture;
 

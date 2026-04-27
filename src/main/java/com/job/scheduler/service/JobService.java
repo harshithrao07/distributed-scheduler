@@ -1,7 +1,7 @@
 package com.job.scheduler.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.job.scheduler.dto.CancelJobResponseDTO;
 import com.job.scheduler.dto.DlqJobDetailDTO;
 import com.job.scheduler.dto.DlqJobSummaryDTO;

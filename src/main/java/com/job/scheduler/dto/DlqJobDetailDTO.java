@@ -1,6 +1,6 @@
 package com.job.scheduler.dto;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.job.scheduler.enums.DeadLetterStatus;
 import com.job.scheduler.enums.JobPriority;
 import com.job.scheduler.enums.JobType;

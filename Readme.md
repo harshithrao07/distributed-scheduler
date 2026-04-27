@@ -583,6 +583,7 @@ scheduler.retry.max-delay-ms=30000
 # Due-job poller
 scheduler.due-job.poll-delay-ms=1000
 scheduler.due-job.dispatch-retry-delay-ms=5000
+scheduler.due-job.claim-limit=100
 
 # Watchdogs
 scheduler.queued-watchdog.timeout-ms=300000
@@ -608,7 +609,7 @@ spring.mail.properties.mail.smtp.timeout=10000
 spring.mail.properties.mail.smtp.writetimeout=10000
 ```
 
-Scheduler mode: set `scheduler.enabled=true` on exactly one instance. Additional API/worker instances should use `false` to avoid duplicate DB polling. A future improvement can replace this with leader election or atomic row claiming.
+Due-job dispatch uses atomic PostgreSQL row claiming with `FOR UPDATE SKIP LOCKED`. Multiple scheduler instances can run with `scheduler.enabled=true`; each poll claims a bounded batch of due `PENDING` jobs and moves their `nextRunAt` forward before publishing to Kafka. The database row lock is held only for the claim transaction, not while Kafka publishing is in progress. If publish succeeds, the job becomes `QUEUED`; if the scheduler crashes or Kafka publish fails, the job becomes due again after `scheduler.due-job.dispatch-retry-delay-ms`.
 
 ---
 

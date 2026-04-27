@@ -5,6 +5,8 @@ import com.job.scheduler.enums.DeadLetterStatus;
 import com.job.scheduler.enums.JobStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -18,6 +20,27 @@ public interface JobRepository extends JpaRepository<Job, UUID>, JpaSpecificatio
     List<Job> findByJobStatusOrderByUpdatedAtDesc(JobStatus jobStatus);
 
     List<Job> findByJobStatusAndNextRunAtLessThanEqual(JobStatus jobStatus, Instant now);
+
+    @Query(value = """
+            UPDATE jobs
+            SET next_run_at = :retryAt,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id IN (
+                SELECT id
+                FROM jobs
+                WHERE job_status = 'PENDING'
+                  AND next_run_at <= :now
+                ORDER BY next_run_at ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT :limit
+            )
+            RETURNING *
+            """, nativeQuery = true)
+    List<Job> claimDueJobsForDispatch(
+            @Param("now") Instant now,
+            @Param("retryAt") Instant retryAt,
+            @Param("limit") int limit
+    );
 
     List<Job> findByJobStatusAndQueuedAtLessThanEqual(JobStatus jobStatus, Instant cutoff);
 
