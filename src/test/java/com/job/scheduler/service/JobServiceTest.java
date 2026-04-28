@@ -20,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -76,6 +77,7 @@ class JobServiceTest {
         );
 
         when(validator.validate(any())).thenReturn(Set.of());
+        when(jobRepository.findByIdempotencyKey("job-key-1")).thenReturn(Optional.empty());
 
         UUID savedId = UUID.randomUUID();
         when(jobRepository.save(any(Job.class))).thenAnswer(invocation -> {
@@ -118,6 +120,7 @@ class JobServiceTest {
         );
 
         when(validator.validate(any())).thenReturn(Set.of());
+        when(jobRepository.findByIdempotencyKey("job-key-2")).thenReturn(Optional.empty());
 
         UUID savedId = UUID.randomUUID();
         when(jobRepository.save(any(Job.class))).thenAnswer(invocation -> {
@@ -169,6 +172,7 @@ class JobServiceTest {
         );
 
         when(validator.validate(any())).thenReturn(Set.of());
+        when(jobRepository.findByIdempotencyKey("cron-job-key")).thenReturn(Optional.empty());
 
         UUID savedId = UUID.randomUUID();
         when(jobRepository.save(any(Job.class))).thenAnswer(invocation -> {
@@ -230,6 +234,63 @@ class JobServiceTest {
 
         assertThatThrownBy(() -> jobService.submitJob(request))
                 .isInstanceOf(ConstraintViolationException.class);
+    }
+
+    @Test
+    void submitJobReturnsExistingJobIdForDuplicateIdempotencyKey() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("url", "https://example.com");
+        payload.set("body", objectMapper.createObjectNode());
+
+        JobRequestDTO request = new JobRequestDTO(
+                JobType.WEBHOOK,
+                JobPriority.MEDIUM,
+                payload,
+                null,
+                3,
+                "duplicate-job-key"
+        );
+
+        UUID existingId = UUID.randomUUID();
+        Job existingJob = new Job();
+        existingJob.setId(existingId);
+
+        when(validator.validate(any())).thenReturn(Set.of());
+        when(jobRepository.findByIdempotencyKey("duplicate-job-key")).thenReturn(Optional.of(existingJob));
+
+        UUID result = jobService.submitJob(request);
+
+        assertThat(result).isEqualTo(existingId);
+    }
+
+    @Test
+    void submitJobReturnsExistingJobIdWhenDuplicateInsertRaces() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("url", "https://example.com");
+        payload.set("body", objectMapper.createObjectNode());
+
+        JobRequestDTO request = new JobRequestDTO(
+                JobType.WEBHOOK,
+                JobPriority.MEDIUM,
+                payload,
+                null,
+                3,
+                "raced-job-key"
+        );
+
+        UUID existingId = UUID.randomUUID();
+        Job existingJob = new Job();
+        existingJob.setId(existingId);
+
+        when(validator.validate(any())).thenReturn(Set.of());
+        when(jobRepository.findByIdempotencyKey("raced-job-key"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existingJob));
+        when(jobRepository.save(any(Job.class))).thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        UUID result = jobService.submitJob(request);
+
+        assertThat(result).isEqualTo(existingId);
     }
 
     @Test

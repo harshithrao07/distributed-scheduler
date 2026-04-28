@@ -337,6 +337,10 @@ Response shape:
 }
 ```
 
+### Idempotent Submission
+
+`POST /app/v1/jobs` treats `idempotencyKey` as the logical identity for one-time submissions. If the same key is submitted again, the API returns the existing job ID instead of surfacing a raw database uniqueness failure. Manual requeues intentionally create a fresh `idempotencyKey`, and cron jobs still use their stored key only for submission identity, not for recurring-run completion markers.
+
 ### Cancellation
 
 `POST /app/v1/jobs/{jobId}/cancel` cancels jobs that have not started running yet.
@@ -564,17 +568,10 @@ docker compose down -v
 ## Configuration
 
 ```properties
-# Local infrastructure connections
-spring.datasource.url=jdbc:postgresql://localhost:5432/jobscheduler
-spring.datasource.username=postgres
-spring.datasource.password=postgres
-spring.kafka.bootstrap-servers=localhost:9092
-spring.data.redis.host=localhost
-spring.data.redis.port=6379
-
-# Scheduler toggle. Only one instance should run scheduling.
-scheduler.enabled=true
-scheduler.worker-id=worker-1
+# Shared defaults
+spring.profiles.default=local
+scheduler.enabled=${SCHEDULER_ENABLED:true}
+scheduler.worker-id=${SCHEDULER_WORKER_ID:worker-1}
 
 # Retry backoff
 scheduler.retry.base-delay-ms=1000
@@ -608,6 +605,12 @@ spring.mail.properties.mail.smtp.connectiontimeout=5000
 spring.mail.properties.mail.smtp.timeout=10000
 spring.mail.properties.mail.smtp.writetimeout=10000
 ```
+
+Profile-specific configuration lives in:
+
+- [D:\scheduler\src\main\resources\application-local.properties](D:/scheduler/src/main/resources/application-local.properties:1) for local PostgreSQL, Kafka, and Redis
+- [D:\scheduler\src\main\resources\application-test.properties](D:/scheduler/src/main/resources/application-test.properties:1) for test-focused defaults
+- [D:\scheduler\src\main\resources\application-prod.properties](D:/scheduler/src/main/resources/application-prod.properties:1) for environment-variable-driven production settings
 
 Due-job dispatch uses atomic PostgreSQL row claiming with `FOR UPDATE SKIP LOCKED`. Multiple scheduler instances can run with `scheduler.enabled=true`; each poll claims a bounded batch of due `PENDING` jobs and moves their `nextRunAt` forward before publishing to Kafka. The database row lock is held only for the claim transaction, not while Kafka publishing is in progress. If publish succeeds, the job becomes `QUEUED`; if the scheduler crashes or Kafka publish fails, the job becomes due again after `scheduler.due-job.dispatch-retry-delay-ms`.
 
@@ -664,12 +667,13 @@ utility/      Key builders for locks and done markers
 - Integration tests with Testcontainers for PostgreSQL, Redis, Kafka, concurrency, and failure paths
 - JaCoCo coverage reporting and SonarQube analysis wiring
 - GitHub Actions CI for Maven tests, coverage artifacts, and optional Sonar analysis
+- Runtime configuration profiles for local, test, and production environments
+- Duplicate `idempotencyKey` submissions now return the existing job ID instead of leaking a raw uniqueness error
 
 ### Up Next
 
-- Runtime configuration profiles for Kafka, Redis, PostgreSQL, and Mail
 - Review and address remaining Sonar findings
-- Extend API behavior for duplicate submissions so existing jobs can be surfaced more gracefully than a raw uniqueness failure
+- Dockerize the app and choose a deployment path
 
 ### Feature Roadmap
 

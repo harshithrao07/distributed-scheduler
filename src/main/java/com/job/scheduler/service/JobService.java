@@ -30,6 +30,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -59,6 +60,10 @@ public class JobService {
     public UUID submitJob(JobRequestDTO jobRequestDTO) {
         validateTypedPayload(jobRequestDTO.jobType(), jobRequestDTO.payload());
         CronExpression cronExpression = parseCronExpression(jobRequestDTO.cronExpression());
+        UUID existingJobId = findExistingJobId(jobRequestDTO.idempotencyKey());
+        if (existingJobId != null) {
+            return existingJobId;
+        }
 
         Job job = new Job();
         job.setJobType(jobRequestDTO.jobType());
@@ -74,8 +79,16 @@ public class JobService {
         job.setMaxAttempts(jobRequestDTO.maxAttempts() != null ? jobRequestDTO.maxAttempts() : job.getMaxAttempts());
         job.setIdempotencyKey(jobRequestDTO.idempotencyKey());
 
-        Job savedJob = jobRepository.save(job);
-        return savedJob.getId();
+        try {
+            Job savedJob = jobRepository.save(job);
+            return savedJob.getId();
+        } catch (DataIntegrityViolationException exception) {
+            UUID duplicateJobId = findExistingJobId(jobRequestDTO.idempotencyKey());
+            if (duplicateJobId != null) {
+                return duplicateJobId;
+            }
+            throw exception;
+        }
     }
 
     public JobPageDTO getJobs(
@@ -265,6 +278,12 @@ public class JobService {
         if (!violations.isEmpty()) {
             throw new ConstraintViolationException(violations);
         }
+    }
+
+    private UUID findExistingJobId(String idempotencyKey) {
+        return jobRepository.findByIdempotencyKey(idempotencyKey)
+                .map(Job::getId)
+                .orElse(null);
     }
 
     @Transactional

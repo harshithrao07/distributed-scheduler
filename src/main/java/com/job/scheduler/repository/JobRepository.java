@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -20,6 +21,8 @@ public interface JobRepository extends JpaRepository<Job, UUID>, JpaSpecificatio
     List<Job> findByJobStatusOrderByUpdatedAtDesc(JobStatus jobStatus);
 
     List<Job> findByJobStatusAndNextRunAtLessThanEqual(JobStatus jobStatus, Instant now);
+
+    Optional<Job> findByIdempotencyKey(String idempotencyKey);
 
     @Query(value = """
             UPDATE jobs
