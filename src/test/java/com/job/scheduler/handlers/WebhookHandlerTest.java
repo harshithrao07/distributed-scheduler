@@ -16,7 +16,6 @@ import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,7 +62,7 @@ class WebhookHandlerTest {
         verify(restClient).post();
         verify(requestBodyUriSpec).uri("https://example.com/hook");
         verify(requestBodySpec).headers(any(Consumer.class));
-        verify(requestBodySpec).body(eq(body.toString()));
+        verify(requestBodySpec).body(body.toString());
         verify(responseSpec).toEntity(String.class);
     }
 

@@ -62,6 +62,10 @@ public class ExecutionLogService {
                     );
                 }
             }
+
+            case PENDING, QUEUED, CANCELED, DEAD -> {
+                // No additional execution-log timestamps are updated for these states.
+            }
         }
 
         executionLogRepository.save(executionLog);

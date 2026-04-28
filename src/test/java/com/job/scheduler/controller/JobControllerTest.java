@@ -25,7 +25,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -104,13 +103,13 @@ class JobControllerTest {
         JobPageDTO page = new JobPageDTO(List.of(summary), 0, 20, 1, 1, true, true);
 
         when(jobService.getJobs(
-                eq(JobStatus.PENDING),
-                eq(JobType.WEBHOOK),
-                eq(JobPriority.MEDIUM),
-                eq(null),
-                eq(null),
-                eq(0),
-                eq(20)
+                JobStatus.PENDING,
+                JobType.WEBHOOK,
+                JobPriority.MEDIUM,
+                null,
+                null,
+                0,
+                20
         )).thenReturn(page);
 
         mockMvc.perform(get("/app/v1/jobs")

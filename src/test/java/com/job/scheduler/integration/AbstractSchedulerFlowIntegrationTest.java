@@ -21,6 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Predicate;
 
 abstract class AbstractSchedulerFlowIntegrationTest extends AbstractSchedulerContainersIntegrationTest {
@@ -86,18 +87,18 @@ abstract class AbstractSchedulerFlowIntegrationTest extends AbstractSchedulerCon
                 return latest;
             }
 
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
+            if (Thread.currentThread().isInterrupted()) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while waiting for " + expectation, e);
+                throw new IllegalStateException("Interrupted while waiting for " + expectation);
             }
+            pausePolling();
         }
 
         throw new AssertionError("Timed out waiting for " + expectation
                 + " for job " + jobId
                 + ". Last known status was " + (latest != null ? latest.getJobStatus() : "unknown")
-                + ", done marker present=" + redisTemplate.hasKey(Utilities.getDoneKey(jobId)));
+                + ", done marker present=" + (latest != null
+                && redisTemplate.hasKey(Utilities.getDoneKey(latest.getIdempotencyKey()))));
     }
 
     protected ExecutionLog waitForExecutionLog(UUID jobId, Predicate<ExecutionLog> predicate, Duration timeout, String expectation) {
@@ -113,16 +114,19 @@ abstract class AbstractSchedulerFlowIntegrationTest extends AbstractSchedulerCon
                 }
             }
 
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
+            if (Thread.currentThread().isInterrupted()) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while waiting for " + expectation, e);
+                throw new IllegalStateException("Interrupted while waiting for " + expectation);
             }
+            pausePolling();
         }
 
         throw new AssertionError("Timed out waiting for " + expectation
                 + " for job " + jobId
                 + ". Last known execution status was " + (latest != null ? latest.getExecutionStatus() : "unknown"));
+    }
+
+    private void pausePolling() {
+        LockSupport.parkNanos(Duration.ofMillis(200).toNanos());
     }
 }

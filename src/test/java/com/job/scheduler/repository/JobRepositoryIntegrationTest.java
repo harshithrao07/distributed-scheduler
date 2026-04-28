@@ -89,9 +89,10 @@ class JobRepositoryIntegrationTest {
 
     @Test
     void savingDuplicateIdempotencyKeyFails() {
-        saveJob(JobStatus.PENDING, Instant.now(), "same-key");
+        Instant now = Instant.now();
+        saveJob(JobStatus.PENDING, now, "same-key");
 
-        assertThatThrownBy(() -> saveJob(JobStatus.PENDING, Instant.now(), "same-key"))
+        assertThatThrownBy(() -> saveJob(JobStatus.PENDING, now, "same-key"))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -110,9 +111,10 @@ class JobRepositoryIntegrationTest {
 
         Job saved = jobRepository.saveAndFlush(job);
         Job reloaded = jobRepository.findById(saved.getId()).orElseThrow();
+        var payload = OBJECT_MAPPER.readTree(reloaded.getPayload());
 
-        assertThat(OBJECT_MAPPER.readTree(reloaded.getPayload()).get("url").asText()).isEqualTo("https://example.com/hook");
-        assertThat(OBJECT_MAPPER.readTree(reloaded.getPayload()).get("body").get("kind").asText()).isEqualTo("integration");
+        assertThat(payload.get("url").stringValue()).isEqualTo("https://example.com/hook");
+        assertThat(payload.get("body").get("kind").stringValue()).isEqualTo("integration");
     }
 
     private Job saveJob(JobStatus status, Instant nextRunAt, String idempotencyKey) {

@@ -1,7 +1,6 @@
 package com.job.scheduler.exception;
 
 import com.job.scheduler.controller.JobController;
-import com.job.scheduler.dto.JobRequestDTO;
 import com.job.scheduler.service.JobService;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,7 +14,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
 
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;

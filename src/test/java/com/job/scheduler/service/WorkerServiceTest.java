@@ -8,6 +8,7 @@ import com.job.scheduler.enums.JobStatus;
 import com.job.scheduler.enums.JobType;
 import com.job.scheduler.exception.RedisUnavailableException;
 import com.job.scheduler.handlers.JobHandlerRouter;
+import com.job.scheduler.utility.Utilities;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -95,28 +96,32 @@ class WorkerServiceTest {
     void processJobSkipsWhenDoneMarkerExists() {
         UUID jobId = UUID.randomUUID();
         JobDispatchEvent event = new JobDispatchEvent(jobId, JobType.WEBHOOK);
+        Job job = activeJob(jobId, JobType.WEBHOOK);
 
         when(redisHealthService.isRedisAvailable()).thenReturn(true);
-        when(redisTemplate.hasKey("job-done:" + jobId)).thenReturn(true);
+        when(jobService.findById(jobId)).thenReturn(job);
+        when(redisTemplate.hasKey(Utilities.getDoneKey(job.getIdempotencyKey()))).thenReturn(true);
 
         workerService.processJob(event);
 
         verify(redisLockService, never()).acquireLock(anyString(), any(Duration.class));
-        verify(jobService, never()).findById(any());
+        verify(jobService).findById(jobId);
     }
 
     @Test
     void processJobSkipsWhenLockIsNotAcquired() {
         UUID jobId = UUID.randomUUID();
         JobDispatchEvent event = new JobDispatchEvent(jobId, JobType.WEBHOOK);
+        Job job = activeJob(jobId, JobType.WEBHOOK);
 
         when(redisHealthService.isRedisAvailable()).thenReturn(true);
-        when(redisTemplate.hasKey("job-done:" + jobId)).thenReturn(false);
+        when(jobService.findById(jobId)).thenReturn(job);
+        when(redisTemplate.hasKey(Utilities.getDoneKey(job.getIdempotencyKey()))).thenReturn(false);
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn(null);
 
         workerService.processJob(event);
 
-        verify(jobService, never()).findById(any());
+        verify(jobService).findById(jobId);
         verify(redisLockService, never()).releaseLock(anyString(), anyString());
     }
 
@@ -126,9 +131,10 @@ class WorkerServiceTest {
         JobDispatchEvent event = new JobDispatchEvent(jobId, JobType.WEBHOOK);
         Job job = activeJob(jobId, JobType.WEBHOOK);
         ExecutionLog executionLog = new ExecutionLog();
+        String doneKey = Utilities.getDoneKey(job.getIdempotencyKey());
 
         when(redisHealthService.isRedisAvailable()).thenReturn(true);
-        when(redisTemplate.hasKey("job-done:" + jobId)).thenReturn(false);
+        when(redisTemplate.hasKey(doneKey)).thenReturn(false);
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-1");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
@@ -142,7 +148,7 @@ class WorkerServiceTest {
         verify(jobHandlerRouter).route(event);
         verify(executionLogService).updateExecutionStatus(executionLog, JobStatus.SUCCESS, null, "worker-test");
         verify(jobService).updateJobStatus(jobId, JobStatus.SUCCESS);
-        verify(valueOperations).set(eq("job-done:" + jobId), eq("true"), eq(Duration.ofHours(24)));
+        verify(valueOperations).set(doneKey, "true", Duration.ofHours(24));
         verify(redisLockService).releaseLock("job-lock:" + jobId, "token-1");
     }
 
@@ -154,7 +160,6 @@ class WorkerServiceTest {
         ExecutionLog executionLog = new ExecutionLog();
 
         when(redisHealthService.isRedisAvailable()).thenReturn(true);
-        when(redisTemplate.hasKey("job-done:" + jobId)).thenReturn(false);
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-2");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
@@ -165,7 +170,7 @@ class WorkerServiceTest {
 
         verify(jobService).scheduleNextCronRun(jobId);
         verify(jobService, never()).updateJobStatus(jobId, JobStatus.SUCCESS);
-        verify(valueOperations, never()).set(eq("job-done:" + jobId), eq("true"), any(Duration.class));
+        verify(valueOperations, never()).set(anyString(), eq("true"), any(Duration.class));
     }
 
     @Test
@@ -176,7 +181,7 @@ class WorkerServiceTest {
         ExecutionLog executionLog = new ExecutionLog();
 
         when(redisHealthService.isRedisAvailable()).thenReturn(true);
-        when(redisTemplate.hasKey("job-done:" + jobId)).thenReturn(false);
+        when(redisTemplate.hasKey(Utilities.getDoneKey(job.getIdempotencyKey()))).thenReturn(false);
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-3");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
@@ -200,7 +205,7 @@ class WorkerServiceTest {
         ExecutionLog executionLog = new ExecutionLog();
 
         when(redisHealthService.isRedisAvailable()).thenReturn(true);
-        when(redisTemplate.hasKey("job-done:" + jobId)).thenReturn(false);
+        when(redisTemplate.hasKey(Utilities.getDoneKey(job.getIdempotencyKey()))).thenReturn(false);
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-4");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
@@ -225,7 +230,7 @@ class WorkerServiceTest {
         Job job = activeJob(jobId, JobType.WEBHOOK);
 
         when(redisHealthService.isRedisAvailable()).thenReturn(true);
-        when(redisTemplate.hasKey("job-done:" + jobId)).thenReturn(false);
+        when(redisTemplate.hasKey(Utilities.getDoneKey(job.getIdempotencyKey()))).thenReturn(false);
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-5");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(true);
@@ -243,6 +248,7 @@ class WorkerServiceTest {
         job.setJobType(type);
         job.setJobPriority(JobPriority.MEDIUM);
         job.setJobStatus(JobStatus.QUEUED);
+        job.setIdempotencyKey(type.name().toLowerCase() + "-" + id);
         return job;
     }
 }

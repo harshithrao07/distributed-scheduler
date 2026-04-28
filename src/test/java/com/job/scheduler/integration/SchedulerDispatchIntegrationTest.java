@@ -1,6 +1,7 @@
 package com.job.scheduler.integration;
 
 import com.job.scheduler.dto.JobDispatchEvent;
+import com.job.scheduler.entity.Job;
 import com.job.scheduler.enums.JobPriority;
 import com.job.scheduler.enums.JobStatus;
 import com.job.scheduler.enums.JobType;
@@ -62,14 +63,15 @@ class SchedulerDispatchIntegrationTest extends AbstractSchedulerFlowIntegrationT
         assertThat(executionLog.getDurationMs()).isGreaterThanOrEqualTo(0L);
         assertThat(executionLog.getErrorMessage()).isNull();
         assertThat(executionLog.getWorkerId()).isEqualTo("integration-worker");
-        assertThat(redisTemplate.hasKey(Utilities.getDoneKey(jobId))).isTrue();
+        assertThat(redisTemplate.hasKey(Utilities.getDoneKey(processed.getIdempotencyKey()))).isTrue();
     }
 
     @Test
     void processJobSkipsWhenDoneMarkerAlreadyExistsInRedis() {
         UUID jobId = submitCleanupJob(null, "done-marker-" + UUID.randomUUID());
         jobService.markDispatchSucceeded(jobId);
-        redisTemplate.opsForValue().set(Utilities.getDoneKey(jobId), "true", Duration.ofHours(24));
+        Job queued = jobRepository.findById(jobId).orElseThrow();
+        redisTemplate.opsForValue().set(Utilities.getDoneKey(queued.getIdempotencyKey()), "true", Duration.ofHours(24));
 
         workerService.processJob(new JobDispatchEvent(jobId, JobType.CLEANUP));
 
@@ -142,6 +144,6 @@ class SchedulerDispatchIntegrationTest extends AbstractSchedulerFlowIntegrationT
         assertThat(executionLog.getDurationMs()).isNotNull();
         assertThat(executionLog.getErrorMessage()).isNull();
         assertThat(executionLog.getWorkerId()).isEqualTo("integration-worker");
-        assertThat(redisTemplate.hasKey(Utilities.getDoneKey(jobId))).isFalse();
+        assertThat(redisTemplate.hasKey(Utilities.getDoneKey(rescheduled.getIdempotencyKey()))).isFalse();
     }
 }

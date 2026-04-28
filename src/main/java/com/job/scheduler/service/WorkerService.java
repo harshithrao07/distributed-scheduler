@@ -50,29 +50,32 @@ public class WorkerService {
         }
 
         UUID jobId = jobDispatchEvent.jobId();
-
-        String doneKey = Utilities.getDoneKey(jobId);
         String lockKey = Utilities.getLockKey(jobId);
+        Job job = jobService.findById(jobId);
+        String doneKey = shouldUseDoneMarker(job) ? Utilities.getDoneKey(job.getIdempotencyKey()) : null;
 
-        // Idempotency Check
-        if (hasDoneMarker(doneKey, jobId)) return;
-
-        // Acquire the lock
-        String lockToken = acquireLock(lockKey, jobId);
-
-        // If lock not acquired then job is already processed by some other worker
-        if (lockToken == null) return;
-
-        ScheduledFuture<?> renewTask = renewExecutor.scheduleAtFixedRate(
-                () -> redisLockService.renewLock(lockKey, lockToken, Duration.ofSeconds(30)),
-                10,
-                10,
-                TimeUnit.SECONDS
-        );
+        ScheduledFuture<?> renewTask = null;
         ExecutionLog executionLog = null;
+        String lockToken = null;
 
         try {
-            Job job = jobService.findById(jobId);
+            if (hasDoneMarker(doneKey, jobId)) {
+                return;
+            }
+
+            lockToken = acquireLock(lockKey, jobId);
+            if (lockToken == null) {
+                return;
+            }
+
+            String acquiredLockToken = lockToken;
+            renewTask = renewExecutor.scheduleAtFixedRate(
+                    () -> redisLockService.renewLock(lockKey, acquiredLockToken, Duration.ofSeconds(30)),
+                    10,
+                    10,
+                    TimeUnit.SECONDS
+            );
+
             if (shouldSkip(job)) {
                 return;
             }
@@ -96,33 +99,46 @@ public class WorkerService {
             // Route it to right per type handler
             jobHandlerRouter.route(jobDispatchEvent);
 
-            // Update execution status and job status to SUCCESS
-            executionLogService.updateExecutionStatus(executionLog, JobStatus.SUCCESS, null, workerId);
-            if (jobService.hasCronExpression(job)) {
-                jobService.scheduleNextCronRun(jobId);
-            } else {
-                jobService.updateJobStatus(jobId, JobStatus.SUCCESS);
-
-                // Set done key on success
-                markJobDoneBestEffort(doneKey, jobId);
-            }
+            handleSuccessfulExecution(job, jobId, executionLog, doneKey);
         } catch (Exception e) {
-            jobService.updateJobStatus(jobId, JobStatus.FAILED);
-            if (executionLog != null) {
-                executionLogService.updateExecutionStatus(executionLog, JobStatus.FAILED, e.getMessage(), workerId);
-            }
-
-            if (e instanceof EntityNotFoundException || e instanceof IllegalArgumentException
-            || jobService.maxAttemptsExceeded(jobId)) {
-                // Mark the job as DEAD
-                jobService.markJobDead(jobId, e.getMessage());
-            } else {
-                jobService.scheduleRetry(jobId, Instant.now().plus(retryDelay(jobId)), e.getMessage());
-            }
+            handleFailedExecution(jobId, executionLog, e);
         } finally {
-            renewTask.cancel(true);
+            if (renewTask != null) {
+                renewTask.cancel(true);
+            }
             releaseLockBestEffort(lockKey, lockToken, jobId);
         }
+    }
+
+    private void handleSuccessfulExecution(Job job, UUID jobId, ExecutionLog executionLog, String doneKey) {
+        executionLogService.updateExecutionStatus(executionLog, JobStatus.SUCCESS, null, workerId);
+        if (jobService.hasCronExpression(job)) {
+            jobService.scheduleNextCronRun(jobId);
+            return;
+        }
+
+        jobService.updateJobStatus(jobId, JobStatus.SUCCESS);
+        markJobDoneBestEffort(doneKey, jobId);
+    }
+
+    private void handleFailedExecution(UUID jobId, ExecutionLog executionLog, Exception e) {
+        jobService.updateJobStatus(jobId, JobStatus.FAILED);
+        if (executionLog != null) {
+            executionLogService.updateExecutionStatus(executionLog, JobStatus.FAILED, e.getMessage(), workerId);
+        }
+
+        if (shouldMarkDead(jobId, e)) {
+            jobService.markJobDead(jobId, e.getMessage());
+            return;
+        }
+
+        jobService.scheduleRetry(jobId, Instant.now().plus(retryDelay(jobId)), e.getMessage());
+    }
+
+    private boolean shouldMarkDead(UUID jobId, Exception e) {
+        return e instanceof EntityNotFoundException
+                || e instanceof IllegalArgumentException
+                || jobService.maxAttemptsExceeded(jobId);
     }
 
     private boolean shouldSkip(Job job) {
@@ -150,6 +166,10 @@ public class WorkerService {
     }
 
     private boolean hasDoneMarker(String doneKey, UUID jobId) {
+        if (doneKey == null) {
+            return false;
+        }
+
         try {
             return Boolean.TRUE.equals(redisTemplate.hasKey(doneKey));
         } catch (RuntimeException e) {
@@ -166,6 +186,10 @@ public class WorkerService {
     }
 
     private void markJobDoneBestEffort(String doneKey, UUID jobId) {
+        if (doneKey == null) {
+            return;
+        }
+
         try {
             redisTemplate.opsForValue().set(doneKey, "true", Duration.ofHours(24));
         } catch (RuntimeException e) {
@@ -184,6 +208,10 @@ public class WorkerService {
     @PreDestroy
     public void shutdown() {
         renewExecutor.shutdownNow();
+    }
+
+    private boolean shouldUseDoneMarker(Job job) {
+        return !jobService.hasCronExpression(job);
     }
 
 }

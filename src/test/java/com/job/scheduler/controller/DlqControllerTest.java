@@ -22,7 +22,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -72,13 +71,13 @@ class DlqControllerTest {
         DlqPageDTO page = new DlqPageDTO(List.of(summary), 0, 20, 1, 1, true, true);
 
         when(jobService.getDeadLetterJobs(
-                eq(DeadLetterStatus.PENDING),
-                eq(JobType.WEBHOOK),
-                eq(JobPriority.HIGH),
-                eq(null),
-                eq(null),
-                eq(0),
-                eq(20)
+                DeadLetterStatus.PENDING,
+                JobType.WEBHOOK,
+                JobPriority.HIGH,
+                null,
+                null,
+                0,
+                20
         )).thenReturn(page);
 
         mockMvc.perform(get("/app/v1/dlq")

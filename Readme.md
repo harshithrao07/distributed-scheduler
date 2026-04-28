@@ -281,7 +281,7 @@ flowchart LR
 
 ### Idempotency Marker
 
-Completed one-time jobs write a `job-done:{jobId}` key to Redis with a 24 hour TTL. If Kafka redelivers the same event, the worker checks this marker and skips already-completed work.
+Completed one-time jobs write a `job-done:{idempotencyKey}` key to Redis with a 24 hour TTL. If Kafka redelivers the same logical job, the worker checks this marker and skips already-completed work. Execution locking still uses `job-lock:{jobId}` so in-flight coordination stays tied to the queued record, while completion dedupe stays tied to the logical job identity. Cron jobs intentionally do not write a done-marker, and manual requeues generate a fresh `idempotencyKey` so they run as new logical executions.
 
 ### External Call Timeouts
 
@@ -527,7 +527,7 @@ erDiagram
 | Key | Purpose | TTL |
 |---|---|---|
 | `job-lock:{jobId}` | Worker execution lock, renewed while running | 30s |
-| `job-done:{jobId}` | Idempotency marker for completed one-time jobs | 24h |
+| `job-done:{idempotencyKey}` | Idempotency marker for completed one-time jobs | 24h |
 
 ---
 
@@ -660,26 +660,28 @@ utility/      Key builders for locks and done markers
 - Docker Compose for local PostgreSQL, Kafka, and Redis
 - Pagination and filtering for the job list API
 - Cancellation support for pending and queued jobs
+- Unit tests for services, handlers, producers, and controllers
+- Integration tests with Testcontainers for PostgreSQL, Redis, Kafka, concurrency, and failure paths
+- JaCoCo coverage reporting and SonarQube analysis wiring
+- GitHub Actions CI for Maven tests, coverage artifacts, and optional Sonar analysis
 
 ### Up Next
 
 - Runtime configuration profiles for Kafka, Redis, PostgreSQL, and Mail
-- Unit and integration tests for worker lifecycle, retry, cron, watchdogs, DLQ, and handler routing
-- Testcontainers for integration tests
+- Review and address remaining Sonar findings
+- Extend API behavior for duplicate submissions so existing jobs can be surfaced more gracefully than a raw uniqueness failure
 
 ### Feature Roadmap
 
 - `REPORT` and `SCRAPE` handler implementations
 - SSE live updates for job status
 - Metrics: success rate, average duration, jobs per status/type
-- Structured API error responses
-- GitHub Actions CI
 - React dashboard
 
 ### Production Hardening
 
-- Leader election or atomic DB row claiming to replace the single-scheduler flag
-- Stronger concurrency protection around due-job claiming
+- Runtime profiles and secret management for environment-specific configuration
+- Clear multi-instance scheduler strategy, including whether the `scheduler.enabled` flag remains or is replaced
 - Authentication and authorization for job management APIs
 
 ---
@@ -691,7 +693,7 @@ utility/      Key builders for locks and done markers
 - `nextRunAt` unifies scheduling. Immediate jobs, retries, and cron jobs all use the same scheduling column.
 - `QUEUED` is a distinct state. It separates "Kafka accepted this" from "a worker started this."
 - Two watchdogs recover two failure windows. The `QUEUED` watchdog handles jobs that were dispatched but never picked up. The `RUNNING` watchdog handles worker crashes mid-execution.
-- Redis locks reduce duplicate execution under Kafka's at-least-once delivery model.
+- Redis uses two identities on purpose. `jobId` coordinates in-flight locking, while `idempotencyKey` dedupes completed one-time work across Kafka redelivery.
 - Lua scripts make lock operations ownership-safe.
 - Redis health checks pause Kafka consumption when locks and idempotency checks cannot be trusted.
 - Dead-letter state is durable. DLQ publish failures are retried from PostgreSQL state, not memory.
@@ -729,3 +731,17 @@ mvn clean verify sonar:sonar \
 ```
 
 JaCoCo writes the coverage report to `target/site/jacoco/jacoco.xml`, and Surefire writes test results to `target/surefire-reports`.
+
+### GitHub Actions CI
+
+The repository includes [`.github/workflows/ci.yml`](D:/scheduler/.github/workflows/ci.yml:1). It runs:
+
+- `./mvnw -B test` on every push and pull request
+- JaCoCo and Surefire artifact uploads for debugging and coverage review
+- `./mvnw -B clean verify sonar:sonar` when both `SONAR_TOKEN` and the `SONAR_HOST_URL` repository variable are configured
+
+To enable Sonar analysis in GitHub Actions:
+
+1. Add a repository secret named `SONAR_TOKEN`
+2. Add a repository variable named `SONAR_HOST_URL`
+3. Make sure that SonarQube server is reachable from the GitHub runner; `http://localhost:9000` only works for local runs, not GitHub-hosted runners

@@ -17,12 +17,12 @@ public class KafkaErrorHandlerConfig {
             @Value("${scheduler.kafka.redis-retry-backoff-ms:5000}") long redisRetryBackoffMs
     ) {
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(
-                (record, exception) -> log.error(
+                (consumerRecord, thrownException) -> log.error(
                         "Kafka record was not processed after retries. topic={}, partition={}, offset={}",
-                        record.topic(),
-                        record.partition(),
-                        record.offset(),
-                        exception
+                        consumerRecord.topic(),
+                        consumerRecord.partition(),
+                        consumerRecord.offset(),
+                        thrownException
                 ),
                 new FixedBackOff(redisRetryBackoffMs, FixedBackOff.UNLIMITED_ATTEMPTS)
         );

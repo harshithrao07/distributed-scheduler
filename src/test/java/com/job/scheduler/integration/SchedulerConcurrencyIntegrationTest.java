@@ -1,6 +1,7 @@
 package com.job.scheduler.integration;
 
 import com.job.scheduler.dto.JobDispatchEvent;
+import com.job.scheduler.entity.Job;
 import com.job.scheduler.enums.JobStatus;
 import com.job.scheduler.enums.JobType;
 import com.job.scheduler.service.WorkerService;
@@ -11,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -51,7 +51,7 @@ class SchedulerConcurrencyIntegrationTest extends AbstractSchedulerFlowIntegrati
                 barrier.await(5, TimeUnit.SECONDS);
                 return jobRepository.claimDueJobsForDispatch(now, retryAt, 1)
                         .stream()
-                        .map(job -> job.getId())
+                        .map(Job::getId)
                         .toList();
             };
 
@@ -63,7 +63,7 @@ class SchedulerConcurrencyIntegrationTest extends AbstractSchedulerFlowIntegrati
 
             assertThat(firstClaim).hasSize(1);
             assertThat(secondClaim).hasSize(1);
-            assertThat(Set.copyOf(firstClaim)).doesNotContainAnyElementsOf(secondClaim);
+            assertThat(firstClaim).doesNotContainAnyElementsOf(secondClaim);
 
             entityManager.clear();
             var jobs = jobRepository.findAll();

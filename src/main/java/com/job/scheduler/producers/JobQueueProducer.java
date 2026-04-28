@@ -15,42 +15,32 @@ import java.util.UUID;
 @Slf4j
 @RequiredArgsConstructor
 public class JobQueueProducer {
+    private static final String SEND_ATTEMPT_LOG = "Attempting to send message to topic: {}, recordId: {}";
+    private static final String SEND_SUCCESS_LOG = "Message sent successfully to topic: {}, recordId: {}";
+    private static final String SEND_FAILURE_LOG = "Failed to send message to topic: {}, recordId: {}";
+
     private final KafkaTemplate<UUID, JobDispatchEvent> kafkaTemplate;
 
     public CompletableFuture<Void> sendToMainQueue(JobDispatchEvent job) {
-        log.info("Attempting to send message to topic: {}, recordId: {}", Topics.TOPIC_JOB_QUEUE, job.jobId());
-        return kafkaTemplate.send(Topics.TOPIC_JOB_QUEUE, job.jobId(), job)
-                .whenComplete((result, ex) -> {
-                    if (ex == null) {
-                        log.info("Message sent successfully to topic: {}, recordId: {}", Topics.TOPIC_JOB_QUEUE, job.jobId());
-                    } else {
-                        log.error("Failed to send message to topic: {}, recordId: {}", Topics.TOPIC_JOB_QUEUE, job.jobId(), ex);
-                    }
-                })
-                .thenApply(result -> null);
+        return send(Topics.TOPIC_JOB_QUEUE, job);
     }
 
     public CompletableFuture<Void> sendToHighPriorityQueue(JobDispatchEvent job) {
-        log.info("Attempting to send message to topic: {}, recordId: {}", Topics.TOPIC_JOB_QUEUE_HIGH, job.jobId());
-        return kafkaTemplate.send(Topics.TOPIC_JOB_QUEUE_HIGH, job.jobId(), job)
-                .whenComplete((result, ex) -> {
-                    if (ex == null) {
-                        log.info("Message sent successfully to topic: {}, recordId: {}", Topics.TOPIC_JOB_QUEUE_HIGH, job.jobId());
-                    } else {
-                        log.error("Failed to send message to topic: {}, recordId: {}", Topics.TOPIC_JOB_QUEUE_HIGH, job.jobId(), ex);
-                    }
-                })
-                .thenApply(result -> null);
+        return send(Topics.TOPIC_JOB_QUEUE_HIGH, job);
     }
 
     public CompletableFuture<Void> sendToDlq(JobDispatchEvent job) {
-        log.info("Attempting to send message to topic: {}, recordId: {}", Topics.TOPIC_JOB_DLQ, job.jobId());
-        return kafkaTemplate.send(Topics.TOPIC_JOB_DLQ, job.jobId(), job)
+        return send(Topics.TOPIC_JOB_DLQ, job);
+    }
+
+    private CompletableFuture<Void> send(String topic, JobDispatchEvent job) {
+        log.info(SEND_ATTEMPT_LOG, topic, job.jobId());
+        return kafkaTemplate.send(topic, job.jobId(), job)
                 .whenComplete((result, ex) -> {
                     if (ex == null) {
-                        log.info("Message sent successfully to topic: {}, recordId: {}", Topics.TOPIC_JOB_DLQ, job.jobId());
+                        log.info(SEND_SUCCESS_LOG, topic, job.jobId());
                     } else {
-                        log.error("Failed to send message to topic: {}, recordId: {}", Topics.TOPIC_JOB_DLQ, job.jobId(), ex);
+                        log.error(SEND_FAILURE_LOG, topic, job.jobId(), ex);
                     }
                 })
                 .thenApply(result -> null);

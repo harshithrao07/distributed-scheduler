@@ -48,6 +48,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class JobService {
+    private static final String CREATED_AT_FIELD = "createdAt";
+    private static final String JOB_NOT_FOUND_MESSAGE = "Job does not exist";
 
     private final JobRepository jobRepository;
     private final ObjectMapper objectMapper;
@@ -87,7 +89,7 @@ public class JobService {
     ) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.max(1, Math.min(size, 100));
-        PageRequest pageRequest = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+        PageRequest pageRequest = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, CREATED_AT_FIELD));
 
         Page<JobSummaryDTO> jobs = jobRepository.findAll(jobFilters(status, type, priority, createdFrom, createdTo), pageRequest)
                 .map(this::toSummary);
@@ -182,7 +184,7 @@ public class JobService {
 
     public List<ExecutionLogDTO> getExecutionLogs(UUID jobId) {
         if (!jobRepository.existsById(jobId)) {
-            throw new EntityNotFoundException("Job does not exist");
+            throw new EntityNotFoundException(JOB_NOT_FOUND_MESSAGE);
         }
 
         return executionLogRepository.findByJobIdOrderByAttemptNumberAsc(jobId)
@@ -267,7 +269,7 @@ public class JobService {
 
     @Transactional
     public void updateJobStatus(UUID jobId, JobStatus jobStatus) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setJobStatus(jobStatus);
         if (jobStatus == JobStatus.QUEUED) {
             job.setQueuedAt(Instant.now());
@@ -293,7 +295,7 @@ public class JobService {
 
     @Transactional
     public void markJobDead(UUID jobId, String errorMessage) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setJobStatus(JobStatus.DEAD);
         job.setNextRunAt(null);
         job.setQueuedAt(null);
@@ -305,7 +307,7 @@ public class JobService {
 
     @Transactional
     public void markDeadLetterAttempt(UUID jobId, Instant nextAttemptAt) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setDeadLetterLastAttemptAt(Instant.now());
         job.setNextDeadLetterAttemptAt(nextAttemptAt);
         jobRepository.save(job);
@@ -313,7 +315,7 @@ public class JobService {
 
     @Transactional
     public void markDeadLetterSent(UUID jobId) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setDeadLetterStatus(DeadLetterStatus.SENT);
         job.setDeadLetterSentAt(Instant.now());
         job.setNextDeadLetterAttemptAt(null);
@@ -323,7 +325,7 @@ public class JobService {
 
     @Transactional
     public void markDeadLetterRetry(UUID jobId, Instant nextAttemptAt, String errorMessage) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setDeadLetterStatus(DeadLetterStatus.PENDING);
         job.setNextDeadLetterAttemptAt(nextAttemptAt);
         job.setDeadLetterErrorMessage(errorMessage);
@@ -332,7 +334,7 @@ public class JobService {
 
     @Transactional
     public void scheduleNextCronRun(UUID jobId) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         CronExpression cronExpression = parseCronExpression(job.getCronExpression());
 
         if (cronExpression == null) {
@@ -353,7 +355,7 @@ public class JobService {
 
     @Transactional
     public void scheduleRetry(UUID jobId, Instant nextRunAt, String errorMessage) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setJobStatus(JobStatus.PENDING);
         job.setNextRunAt(nextRunAt);
         job.setQueuedAt(null);
@@ -365,7 +367,7 @@ public class JobService {
 
     @Transactional
     public void markDispatchSucceeded(UUID jobId) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setJobStatus(JobStatus.QUEUED);
         job.setNextRunAt(null);
         job.setQueuedAt(Instant.now());
@@ -374,14 +376,14 @@ public class JobService {
 
     @Transactional
     public void markDispatchAttempt(UUID jobId, Instant retryDispatchAt) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setNextRunAt(retryDispatchAt);
         jobRepository.save(job);
     }
 
     @Transactional
     public void recoverQueuedJob(UUID jobId) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setJobStatus(JobStatus.PENDING);
         job.setNextRunAt(Instant.now());
         job.setQueuedAt(null);
@@ -390,7 +392,7 @@ public class JobService {
 
     @Transactional
     public void recoverRunningJob(UUID jobId) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         job.setJobStatus(JobStatus.PENDING);
         job.setNextRunAt(Instant.now());
         job.setQueuedAt(null);
@@ -401,7 +403,7 @@ public class JobService {
     }
 
     public boolean maxAttemptsExceeded(UUID jobId) {
-        Job job = jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        Job job = findById(jobId);
         return getAttemptCount(jobId) >= job.getMaxAttempts();
     }
 
@@ -410,7 +412,7 @@ public class JobService {
     }
 
     public Job findById(UUID jobId) {
-        return jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException("Job does not exist"));
+        return jobRepository.findById(jobId).orElseThrow(() -> new EntityNotFoundException(JOB_NOT_FOUND_MESSAGE));
     }
 
     public boolean hasCronExpression(Job job) {
@@ -493,10 +495,10 @@ public class JobService {
                 predicates.add(criteriaBuilder.equal(root.get("jobPriority"), priority));
             }
             if (createdFrom != null) {
-                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("createdAt"), createdFrom));
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get(CREATED_AT_FIELD), createdFrom));
             }
             if (createdTo != null) {
-                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("createdAt"), createdTo));
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get(CREATED_AT_FIELD), createdTo));
             }
 
             return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
@@ -524,10 +526,10 @@ public class JobService {
                 predicates.add(criteriaBuilder.equal(root.get("jobPriority"), priority));
             }
             if (createdFrom != null) {
-                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("createdAt"), createdFrom));
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get(CREATED_AT_FIELD), createdFrom));
             }
             if (createdTo != null) {
-                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("createdAt"), createdTo));
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get(CREATED_AT_FIELD), createdTo));
             }
 
             return criteriaBuilder.and(predicates.toArray(Predicate[]::new));

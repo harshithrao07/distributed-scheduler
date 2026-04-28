@@ -54,8 +54,9 @@ class RedisLockServiceIntegrationTest {
         String firstToken = redisLockService.acquireLock("job-lock:shared-job", Duration.ofSeconds(30));
         String secondToken = competingWorker.acquireLock("job-lock:shared-job", Duration.ofSeconds(30));
 
-        assertThat(firstToken).isNotNull();
-        assertThat(firstToken).startsWith("worker-one:");
+        assertThat(firstToken)
+                .isNotNull()
+                .startsWith("worker-one:");
         assertThat(secondToken).isNull();
     }
 
@@ -73,8 +74,9 @@ class RedisLockServiceIntegrationTest {
         assertThat(firstWorker.releaseLock("job-lock:duplicate-job", lockToken)).isTrue();
 
         String retryAfterRelease = duplicateWorker.acquireLock("job-lock:duplicate-job", Duration.ofSeconds(30));
-        assertThat(retryAfterRelease).isNotNull();
-        assertThat(retryAfterRelease).startsWith("worker-b:");
+        assertThat(retryAfterRelease)
+                .isNotNull()
+                .startsWith("worker-b:");
     }
 
     private RedisLockService competingWorker(String workerId) {

@@ -98,7 +98,7 @@ class JobHandlerRouterTest {
         ArgumentCaptor<WebhookPayload> captor = ArgumentCaptor.forClass(WebhookPayload.class);
         verify(webhookHandler).handle(captor.capture());
         assertThat(captor.getValue().url()).isEqualTo("https://example.com/hook");
-        assertThat(captor.getValue().body().get("message").asText()).isEqualTo("ping");
+        assertThat(captor.getValue().body().get("message").stringValue()).isEqualTo("ping");
     }
 
     @Test
@@ -131,7 +131,9 @@ class JobHandlerRouterTest {
 
         when(jobService.findById(jobId)).thenReturn(job);
 
-        assertThatThrownBy(() -> jobHandlerRouter.route(new JobDispatchEvent(jobId, JobType.WEBHOOK)))
+        JobDispatchEvent event = new JobDispatchEvent(jobId, JobType.WEBHOOK);
+
+        assertThatThrownBy(() -> jobHandlerRouter.route(event))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Payload does not match expected shape");
     }
