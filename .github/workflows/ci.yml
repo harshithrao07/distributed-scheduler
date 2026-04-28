@@ -53,7 +53,6 @@ jobs:
     name: Sonar Analysis
     runs-on: ubuntu-latest
     needs: test
-    if: ${{ secrets.SONAR_TOKEN != '' && vars.SONAR_HOST_URL != '' }}
 
     steps:
       - name: Checkout repository
@@ -69,7 +68,21 @@ jobs:
       - name: Make Maven wrapper executable
         run: chmod +x mvnw
 
+      - name: Check Sonar configuration
+        id: sonar-config
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ] && [ -n "$SONAR_HOST_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Sonar configuration is incomplete; skipping analysis."
+          fi
+
       - name: Run SonarQube analysis
+        if: steps.sonar-config.outputs.enabled == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
