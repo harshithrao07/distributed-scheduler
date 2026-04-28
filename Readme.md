@@ -708,4 +708,24 @@ docker compose up -d
 mvn -DskipTests compile
 ```
 
-Full tests require PostgreSQL, Kafka, and Redis. Add Testcontainers or a test profile before running `mvn test` in CI.
+The test suite now uses Testcontainers for integration coverage. Make sure Docker is available, and if Docker Desktop on Windows needs the TCP endpoint for Testcontainers, set:
+
+```powershell
+setx DOCKER_HOST "tcp://localhost:2375"
+```
+
+Then reopen the terminal and run:
+
+```bash
+mvn test
+```
+
+To generate coverage and send analysis to SonarQube or SonarCloud:
+
+```bash
+mvn clean verify sonar:sonar \
+  -Dsonar.host.url=http://localhost:9000 \
+  -Dsonar.token=your_sonar_token
+```
+
+JaCoCo writes the coverage report to `target/site/jacoco/jacoco.xml`, and Surefire writes test results to `target/surefire-reports`.

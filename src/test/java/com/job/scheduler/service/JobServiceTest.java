@@ -96,7 +96,7 @@ public class JobServiceTest {
         assertThat(savedJob.getJobType()).isEqualTo(JobType.WEBHOOK);
         assertThat(savedJob.getJobPriority()).isEqualTo(JobPriority.MEDIUM);
         assertThat(savedJob.getJobStatus()).isEqualTo(JobStatus.PENDING);
-        assertThat(savedJob.getPayload()).isEqualTo(payload);
+        assertThat(savedJob.getPayload()).isEqualTo(payload.toString());
         assertThat(savedJob.getCronExpression()).isNull();
         assertThat(savedJob.getNextRunAt()).isNotNull();
         assertThat(savedJob.getMaxAttempts()).isEqualTo(5);
@@ -357,7 +357,7 @@ public class JobServiceTest {
         deadJob.setJobType(JobType.WEBHOOK);
         deadJob.setJobPriority(JobPriority.HIGH);
         deadJob.setJobStatus(JobStatus.DEAD);
-        deadJob.setPayload(objectMapper.createObjectNode().put("url", "https://example.com"));
+        deadJob.setPayload(objectMapper.createObjectNode().put("url", "https://example.com").toString());
         deadJob.setCronExpression(null);
         deadJob.setMaxAttempts(4);
         deadJob.setIdempotencyKey("old-key");

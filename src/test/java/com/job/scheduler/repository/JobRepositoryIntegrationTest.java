@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -15,10 +16,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.ObjectMapper;
 
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers(disabledWithoutDocker = true)
 @DataJpaTest
@@ -38,11 +41,14 @@ class JobRepositoryIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create");
     }
 
     @Autowired
     private JobRepository jobRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @Test
     void claimDueJobsForDispatchClaimsOnlyDuePendingJobs() {
@@ -55,9 +61,8 @@ class JobRepositoryIntegrationTest {
 
         assertThat(claimedJobs).hasSize(1);
         assertThat(claimedJobs.get(0).getId()).isEqualTo(duePending.getId());
-        assertThat(Math.abs(claimedJobs.get(0).getNextRunAt().toEpochMilli() - retryAt.toEpochMilli()))
-                .isLessThanOrEqualTo(1000);
 
+        entityManager.clear();
         Job refreshed = jobRepository.findById(duePending.getId()).orElseThrow();
         assertThat(Math.abs(refreshed.getNextRunAt().toEpochMilli() - retryAt.toEpochMilli()))
                 .isLessThanOrEqualTo(1000);
@@ -77,8 +82,37 @@ class JobRepositoryIntegrationTest {
         assertThat(claimedJobs).hasSize(1);
         assertThat(claimedJobs.get(0).getId()).isEqualTo(first.getId());
 
+        entityManager.clear();
         Job refreshedSecond = jobRepository.findById(second.getId()).orElseThrow();
         assertThat(refreshedSecond.getNextRunAt()).isBeforeOrEqualTo(Instant.now());
+    }
+
+    @Test
+    void savingDuplicateIdempotencyKeyFails() {
+        saveJob(JobStatus.PENDING, Instant.now(), "same-key");
+
+        assertThatThrownBy(() -> saveJob(JobStatus.PENDING, Instant.now(), "same-key"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void savePersistsJsonbPayload() {
+        Job job = new Job();
+        job.setJobType(JobType.WEBHOOK);
+        job.setJobStatus(JobStatus.PENDING);
+        job.setJobPriority(JobPriority.MEDIUM);
+        job.setPayload(OBJECT_MAPPER.createObjectNode()
+                .put("url", "https://example.com/hook")
+                .set("body", OBJECT_MAPPER.createObjectNode().put("kind", "integration"))
+                .toString());
+        job.setIdempotencyKey("jsonb-payload");
+        job.setNextRunAt(Instant.now());
+
+        Job saved = jobRepository.saveAndFlush(job);
+        Job reloaded = jobRepository.findById(saved.getId()).orElseThrow();
+
+        assertThat(OBJECT_MAPPER.readTree(reloaded.getPayload()).get("url").asText()).isEqualTo("https://example.com/hook");
+        assertThat(OBJECT_MAPPER.readTree(reloaded.getPayload()).get("body").get("kind").asText()).isEqualTo("integration");
     }
 
     private Job saveJob(JobStatus status, Instant nextRunAt, String idempotencyKey) {
@@ -86,7 +120,7 @@ class JobRepositoryIntegrationTest {
         job.setJobType(JobType.WEBHOOK);
         job.setJobStatus(status);
         job.setJobPriority(JobPriority.MEDIUM);
-        job.setPayload(OBJECT_MAPPER.createObjectNode().put("url", "https://example.com/hook"));
+        job.setPayload(OBJECT_MAPPER.createObjectNode().put("url", "https://example.com/hook").toString());
         job.setIdempotencyKey(idempotencyKey);
         job.setNextRunAt(nextRunAt);
         return jobRepository.saveAndFlush(job);

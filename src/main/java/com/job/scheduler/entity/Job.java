@@ -1,6 +1,5 @@
 package com.job.scheduler.entity;
 
-import tools.jackson.databind.JsonNode;
 import com.job.scheduler.enums.DeadLetterStatus;
 import com.job.scheduler.enums.JobPriority;
 import com.job.scheduler.enums.JobStatus;
@@ -51,7 +50,7 @@ public class Job {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "payload", columnDefinition = "jsonb", nullable = false)
-    private JsonNode payload;
+    private String payload;
 
     @Column(name = "cron_expression")
     private String cronExpression;

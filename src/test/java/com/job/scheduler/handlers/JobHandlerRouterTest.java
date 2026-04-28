@@ -64,7 +64,7 @@ class JobHandlerRouterTest {
         payload.put("to", "user@example.com");
         payload.put("subject", "hello");
         payload.put("body", "world");
-        job.setPayload(payload);
+        job.setPayload(payload.toString());
 
         when(jobService.findById(jobId)).thenReturn(job);
 
@@ -89,7 +89,7 @@ class JobHandlerRouterTest {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("url", "https://example.com/hook");
         payload.set("body", body);
-        job.setPayload(payload);
+        job.setPayload(payload.toString());
 
         when(jobService.findById(jobId)).thenReturn(job);
 
@@ -110,7 +110,7 @@ class JobHandlerRouterTest {
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("olderThanDays", 30);
-        job.setPayload(payload);
+        job.setPayload(payload.toString());
 
         when(jobService.findById(jobId)).thenReturn(job);
 
@@ -127,7 +127,7 @@ class JobHandlerRouterTest {
         Job job = new Job();
         job.setId(jobId);
         job.setJobType(JobType.WEBHOOK);
-        job.setPayload(objectMapper.createArrayNode().add("not-an-object"));
+        job.setPayload(objectMapper.createArrayNode().add("not-an-object").toString());
 
         when(jobService.findById(jobId)).thenReturn(job);
 

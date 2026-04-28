@@ -62,7 +62,7 @@ public class JobService {
         job.setJobType(jobRequestDTO.jobType());
         job.setJobStatus(JobStatus.PENDING);
         job.setJobPriority(jobRequestDTO.jobPriority());
-        job.setPayload(jobRequestDTO.payload());
+        job.setPayload(writePayload(jobRequestDTO.payload()));
         job.setCronExpression(jobRequestDTO.cronExpression());
         if (cronExpression != null) {
             job.setNextRunAt(nextRunAt(cronExpression));
@@ -156,7 +156,7 @@ public class JobService {
                 job.getId(),
                 job.getJobType(),
                 job.getJobPriority(),
-                job.getPayload(),
+                readPayload(job.getPayload()),
                 job.getCronExpression(),
                 job.getLastErrorMessage(),
                 getAttemptCount(job.getId()),
@@ -560,7 +560,7 @@ public class JobService {
                 job.getJobType(),
                 job.getJobStatus(),
                 job.getJobPriority(),
-                job.getPayload(),
+                readPayload(job.getPayload()),
                 job.getCronExpression(),
                 job.getMaxAttempts(),
                 job.getIdempotencyKey(),
@@ -595,5 +595,21 @@ public class JobService {
                 executionLog.getWorkerId(),
                 executionLog.getCreatedAt()
         );
+    }
+
+    private String writePayload(JsonNode payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Could not serialize job payload", e);
+        }
+    }
+
+    private JsonNode readPayload(String payload) {
+        try {
+            return objectMapper.readTree(payload);
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not deserialize persisted job payload", e);
+        }
     }
 }

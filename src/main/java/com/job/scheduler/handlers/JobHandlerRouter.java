@@ -1,6 +1,5 @@
 package com.job.scheduler.handlers;
 
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.job.scheduler.dto.JobDispatchEvent;
 import com.job.scheduler.dto.payload.*;
@@ -36,9 +35,9 @@ public class JobHandlerRouter {
         }
     }
 
-    private <T> T readPayload(JsonNode payload, Class<T> payloadClass) {
+    private <T> T readPayload(String payload, Class<T> payloadClass) {
         try {
-            return objectMapper.treeToValue(payload, payloadClass);
+            return objectMapper.readValue(payload, payloadClass);
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Payload does not match expected shape for " + payloadClass.getSimpleName(), e
