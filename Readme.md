@@ -495,8 +495,6 @@ Cleanup job:
 | `WEBHOOK` | Implemented | Sends HTTP POST with JSON payload |
 | `CLEANUP` | Implemented | Deletes old execution logs |
 
-Planned future handlers include `REPORT` and `SCRAPE`.
-
 ---
 
 ## Persistence Model
@@ -577,6 +575,8 @@ erDiagram
 | `job-lock:{jobId}` | Worker execution lock, renewed while running | 30s |
 | `job-done:{idempotencyKey}` | Idempotency marker for completed one-time jobs | 24h |
 
+---
+
 ## Configuration
 
 ```properties
@@ -590,7 +590,7 @@ scheduler.retry.base-delay-ms=1000
 scheduler.retry.max-delay-ms=30000
 
 # Due-job poller
-scheduler.due-job.poll-delay-ms=1000
+scheduler.due-job.poll-delay-ms=5000
 scheduler.due-job.dispatch-retry-delay-ms=5000
 scheduler.due-job.claim-limit=100
 
@@ -699,17 +699,13 @@ utility/      Key builders for locks and done markers
 
 ## Quality and CI
 
-The test suite now uses Testcontainers for integration coverage. Make sure Docker is available, and if Docker Desktop on Windows needs the TCP endpoint for Testcontainers, set:
+The test suite uses Testcontainers for integration coverage. Make sure Docker Desktop is running before executing:
 
 ```powershell
-setx DOCKER_HOST "tcp://localhost:2375"
-```
-
-Then reopen the terminal and run:
-
-```bash
 mvn test
 ```
+
+If Docker commands fail with a `localhost:2375` connection error, remove the stale `DOCKER_HOST` environment variable and reopen the terminal.
 
 To generate coverage and send analysis to SonarQube or SonarCloud:
 
