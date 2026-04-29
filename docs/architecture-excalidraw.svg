@@ -1,0 +1,117 @@
+<svg width="1280" height="940" viewBox="0 0 1280 940" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Distributed Job Scheduler architecture</title>
+  <desc id="desc">Architecture diagram for a distributed job scheduler using Spring Boot, PostgreSQL, Kafka, Redis, workers, handlers, and recovery services.</desc>
+  <defs>
+    <filter id="paperShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1f2937" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2 2 L10 6 L2 10" stroke="#172033" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .panel { fill: #fffdf8; stroke: #172033; stroke-width: 2.2; }
+      .box { stroke: #172033; stroke-width: 2.4; rx: 18; ry: 18; }
+      .soft { stroke: #172033; stroke-width: 2.1; rx: 16; ry: 16; }
+      .line { stroke: #172033; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .thin { stroke-width: 2; }
+      .dash { stroke-dasharray: 9 9; }
+      .title { fill: #111827; font-family: "Segoe UI", Arial, sans-serif; font-size: 36px; font-weight: 800; letter-spacing: 0; text-anchor: middle; }
+      .subtitle { fill: #4b5563; font-family: "Segoe UI", Arial, sans-serif; font-size: 16px; font-weight: 500; text-anchor: middle; }
+      .section { fill: #6b7280; font-family: "Segoe UI", Arial, sans-serif; font-size: 13px; font-weight: 800; text-anchor: start; letter-spacing: 0.2px; }
+      .h { fill: #111827; font-family: "Segoe UI", Arial, sans-serif; font-size: 20px; font-weight: 800; text-anchor: middle; }
+      .t { fill: #374151; font-family: "Segoe UI", Arial, sans-serif; font-size: 14px; font-weight: 400; text-anchor: middle; }
+      .label { fill: #374151; font-family: "Segoe UI", Arial, sans-serif; font-size: 12px; font-weight: 700; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="940" fill="#f3f4f6"/>
+  <rect x="44" y="36" width="1192" height="868" rx="30" class="panel" filter="url(#paperShadow)"/>
+
+  <text x="640" y="86" class="title">Distributed Job Scheduler</text>
+  <text x="640" y="116" class="subtitle">Durable scheduling with PostgreSQL, asynchronous dispatch with Kafka, and worker recovery with Redis-backed coordination.</text>
+
+  <line x1="92" y1="150" x2="1188" y2="150" stroke="#e5e7eb" stroke-width="2"/>
+  <line x1="92" y1="390" x2="1188" y2="390" stroke="#e5e7eb" stroke-width="2"/>
+  <line x1="92" y1="660" x2="1188" y2="660" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="94" y="174" class="section">DURABLE SCHEDULING PATH</text>
+  <text x="94" y="414" class="section">ASYNC WORKER EXECUTION</text>
+  <text x="94" y="684" class="section">RECOVERY AND FAILURE HANDLING</text>
+
+  <!-- Top lane -->
+  <rect x="92" y="210" width="172" height="112" fill="#e8f3ff" class="box"/>
+  <text x="178" y="250" class="h">Client</text>
+  <text x="178" y="278" class="t">submit, list, cancel</text>
+  <text x="178" y="300" class="t">REST requests</text>
+
+  <rect x="342" y="198" width="212" height="136" fill="#fff2df" class="box"/>
+  <text x="448" y="240" class="h">Spring Boot API</text>
+  <text x="448" y="269" class="t">JobController</text>
+  <text x="448" y="291" class="t">JobService</text>
+  <text x="448" y="313" class="t">Typed payload validation</text>
+
+  <rect x="646" y="194" width="210" height="136" rx="18" fill="#e9f9ef" stroke="#172033" stroke-width="2.4"/>
+  <text x="751" y="246" class="h">PostgreSQL</text>
+  <text x="751" y="276" class="t">jobs + execution logs</text>
+
+  <rect x="948" y="198" width="232" height="136" fill="#fff8d7" class="box"/>
+  <text x="1064" y="240" class="h">Due Job Scheduler</text>
+  <text x="1064" y="269" class="t">polls due rows</text>
+  <text x="1064" y="291" class="t">claims with SKIP LOCKED</text>
+
+  <path d="M264 266 L332 266" class="line"/>
+  <text x="298" y="248" class="label">REST</text>
+  <path d="M554 266 L636 266" class="line"/>
+  <text x="595" y="248" class="label">persist first</text>
+  <path d="M856 266 L938 266" class="line"/>
+  <text x="897" y="248" class="label">poll due jobs</text>
+
+  <!-- Middle lane -->
+  <path d="M1064 334 L1064 446" class="line"/>
+  <text x="1123" y="394" class="label">publish event</text>
+
+  <rect x="946" y="466" width="232" height="152" fill="#f0ebff" class="box"/>
+  <text x="1062" y="510" class="h">Kafka</text>
+  <text x="1062" y="540" class="t">job-queue</text>
+  <text x="1062" y="562" class="t">job-queue-high</text>
+  <text x="1062" y="584" class="t">job-dlq</text>
+
+  <rect x="608" y="466" width="232" height="152" fill="#e8f3ff" class="box"/>
+  <text x="724" y="510" class="h">Worker Service</text>
+  <text x="724" y="540" class="t">consumes job events</text>
+  <text x="724" y="562" class="t">runs one attempt</text>
+  <text x="724" y="584" class="t">updates lifecycle state</text>
+
+  <rect x="286" y="466" width="202" height="152" rx="18" fill="#ffe6e8" stroke="#172033" stroke-width="2.4"/>
+  <text x="387" y="512" class="h">Redis</text>
+  <text x="387" y="540" class="t">worker locks</text>
+  <text x="387" y="562" class="t">idempotency markers</text>
+
+  <path d="M946 542 L850 542" class="line"/>
+  <text x="898" y="523" class="label">consume</text>
+  <path d="M608 542 L500 542" class="line"/>
+  <text x="554" y="523" class="label">lock + dedupe</text>
+  <path d="M724 466 L724 330" class="line thin dash"/>
+  <text x="668" y="408" class="label">update status + logs</text>
+
+  <!-- Handler lane -->
+  <rect x="592" y="704" width="264" height="136" fill="#f9fafb" class="box"/>
+  <text x="724" y="742" class="h">Job Handlers</text>
+  <text x="724" y="774" class="t">SEND_EMAIL</text>
+  <text x="724" y="798" class="t">WEBHOOK</text>
+  <text x="724" y="822" class="t">CLEANUP</text>
+
+  <path d="M724 618 L724 694" class="line"/>
+  <text x="784" y="659" class="label">route by type</text>
+
+  <!-- Recovery lane -->
+  <rect x="92" y="720" width="384" height="110" fill="#ecfeff" class="soft"/>
+  <text x="284" y="762" class="h">Recovery Services</text>
+  <text x="284" y="792" class="t">queued + running watchdogs</text>
+  <text x="284" y="814" class="t">Redis health monitor + DLQ publisher</text>
+
+  <path d="M284 720 L284 704 L548 704 L548 360 L670 360 L670 330" class="line thin dash"/>
+  <text x="416" y="696" class="label">reset stuck jobs</text>
+
+  <path d="M476 812 L520 860 L916 860 L916 584 L936 584" class="line thin dash"/>
+  <text x="708" y="884" class="label">retry DLQ publish</text>
+</svg>
