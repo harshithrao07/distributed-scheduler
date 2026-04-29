@@ -1,6 +1,6 @@
 # Distributed Job Scheduler
 
-Built to explore how production schedulers handle durability and failure recovery, not just happy-path execution.
+A distributed job scheduler that handles what happens when things go wrong — Kafka outages, worker crashes, duplicate delivery, and permanent failures.
 
 Jobs are accepted through a Spring Boot REST API, stored durably in PostgreSQL, dispatched asynchronously through Kafka, coordinated with Redis locks, and recovered by watchdog services when workers or infrastructure fail mid-flow.
 
