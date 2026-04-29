@@ -1,6 +1,6 @@
 # Distributed Job Scheduler
 
-A production-style distributed job scheduler built to demonstrate durability, retries, idempotency, dead-letter handling, and failure recovery instead of just happy-path background execution.
+Built to explore how production schedulers handle durability and failure recovery, not just happy-path execution.
 
 Jobs are accepted through a Spring Boot REST API, stored durably in PostgreSQL, dispatched asynchronously through Kafka, coordinated with Redis locks, and recovered by watchdog services when workers or infrastructure fail mid-flow.
 
@@ -24,7 +24,7 @@ Jobs are accepted through a Spring Boot REST API, stored durably in PostgreSQL, 
 - [Package Layout](#package-layout)
 - [Implemented Capabilities](#implemented-capabilities)
 - [System Design Talking Points](#system-design-talking-points)
-- [Quality and CI](#quality-and-ci)
+- [Testing and CI](#testing-and-ci)
 
 ---
 
@@ -33,7 +33,7 @@ Jobs are accepted through a Spring Boot REST API, stored durably in PostgreSQL, 
 Run the full scheduler stack locally with Docker Compose:
 
 ```bash
-git clone <repo-url> scheduler
+git clone https://github.com/harshithrao07/distributed-scheduler.git scheduler
 cd scheduler
 docker compose up --build -d
 ```
@@ -620,9 +620,9 @@ spring.mail.properties.mail.smtp.writetimeout=10000
 
 Profile-specific configuration lives in:
 
-- [D:\scheduler\src\main\resources\application-local.properties](D:/scheduler/src/main/resources/application-local.properties:1) for local PostgreSQL, Kafka, and Redis
-- [D:\scheduler\src\main\resources\application-test.properties](D:/scheduler/src/main/resources/application-test.properties:1) for test-focused defaults
-- [D:\scheduler\src\main\resources\application-prod.properties](D:/scheduler/src/main/resources/application-prod.properties:1) for environment-variable-driven production settings
+- `application-local.properties` - local PostgreSQL, Kafka, and Redis
+- `application-test.properties` - test-focused defaults
+- `application-prod.properties` - environment-variable-driven production settings
 
 Due-job dispatch uses atomic PostgreSQL row claiming with `FOR UPDATE SKIP LOCKED`. Multiple scheduler instances can run with `scheduler.enabled=true`; each poll claims a bounded batch of due `PENDING` jobs and moves their `nextRunAt` forward before publishing to Kafka. The database row lock is held only for the claim transaction, not while Kafka publishing is in progress. If publish succeeds, the job becomes `QUEUED`; if the scheduler crashes or Kafka publish fails, the job becomes due again after `scheduler.due-job.dispatch-retry-delay-ms`.
 
@@ -697,15 +697,13 @@ utility/      Key builders for locks and done markers
 
 ---
 
-## Quality and CI
+## Testing and CI
 
-The test suite uses Testcontainers for integration coverage. Make sure Docker Desktop is running before executing:
+The test suite uses Testcontainers for integration coverage. Make sure Docker is running before executing:
 
-```powershell
+```bash
 mvn test
 ```
-
-If Docker commands fail with a `localhost:2375` connection error, remove the stale `DOCKER_HOST` environment variable and reopen the terminal.
 
 To generate coverage and send analysis to SonarQube or SonarCloud:
 
@@ -719,7 +717,7 @@ JaCoCo writes the coverage report to `target/site/jacoco/jacoco.xml`, and Surefi
 
 ### GitHub Actions CI
 
-The repository includes [`.github/workflows/ci.yml`](D:/scheduler/.github/workflows/ci.yml:1). It runs:
+The repository includes `.github/workflows/ci.yml`. It runs:
 
 - `./mvnw -B test` on every push and pull request
 - JaCoCo and Surefire artifact uploads for debugging and coverage review
