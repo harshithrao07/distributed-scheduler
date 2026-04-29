@@ -6,12 +6,14 @@ import com.job.scheduler.entity.Job;
 import com.job.scheduler.enums.JobStatus;
 import com.job.scheduler.exception.RedisUnavailableException;
 import com.job.scheduler.handlers.JobHandlerRouter;
+import com.job.scheduler.monitoring.events.JobExecutedEvent;
 import com.job.scheduler.utility.Utilities;
 import jakarta.annotation.PreDestroy;
 import jakarta.persistence.EntityNotFoundException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +27,6 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class WorkerService {
     private final RedisTemplate<String, String> redisTemplate;
     private final JobService jobService;
@@ -33,7 +34,47 @@ public class WorkerService {
     private final JobHandlerRouter jobHandlerRouter;
     private final RedisLockService redisLockService;
     private final RedisHealthService redisHealthService;
+    private final ApplicationEventPublisher eventPublisher;
     private final ScheduledExecutorService renewExecutor = Executors.newSingleThreadScheduledExecutor();
+
+    @Autowired
+    public WorkerService(
+            RedisTemplate<String, String> redisTemplate,
+            JobService jobService,
+            ExecutionLogService executionLogService,
+            JobHandlerRouter jobHandlerRouter,
+            RedisLockService redisLockService,
+            RedisHealthService redisHealthService,
+            ApplicationEventPublisher eventPublisher
+    ) {
+        this.redisTemplate = redisTemplate;
+        this.jobService = jobService;
+        this.executionLogService = executionLogService;
+        this.jobHandlerRouter = jobHandlerRouter;
+        this.redisLockService = redisLockService;
+        this.redisHealthService = redisHealthService;
+        this.eventPublisher = eventPublisher;
+    }
+
+    public WorkerService(
+            RedisTemplate<String, String> redisTemplate,
+            JobService jobService,
+            ExecutionLogService executionLogService,
+            JobHandlerRouter jobHandlerRouter,
+            RedisLockService redisLockService,
+            RedisHealthService redisHealthService
+    ) {
+        this(
+                redisTemplate,
+                jobService,
+                executionLogService,
+                jobHandlerRouter,
+                redisLockService,
+                redisHealthService,
+                event -> {
+                }
+        );
+    }
 
     @Value("${scheduler.worker-id}")
     private String workerId;
@@ -97,11 +138,18 @@ public class WorkerService {
             executionLogService.updateExecutionStatus(executionLog, JobStatus.RUNNING, null, workerId);
 
             // Route it to right per type handler
+            Instant executionStartedAt = Instant.now();
             jobHandlerRouter.route(jobDispatchEvent);
+            publish(new JobExecutedEvent(
+                    job.getJobType(),
+                    job.getJobPriority(),
+                    JobStatus.SUCCESS,
+                    Duration.between(executionStartedAt, Instant.now())
+            ));
 
             handleSuccessfulExecution(job, jobId, executionLog, doneKey);
         } catch (Exception e) {
-            handleFailedExecution(jobId, executionLog, e);
+            handleFailedExecution(job, jobId, executionLog, e);
         } finally {
             if (renewTask != null) {
                 renewTask.cancel(true);
@@ -121,10 +169,16 @@ public class WorkerService {
         markJobDoneBestEffort(doneKey, jobId);
     }
 
-    private void handleFailedExecution(UUID jobId, ExecutionLog executionLog, Exception e) {
+    private void handleFailedExecution(Job job, UUID jobId, ExecutionLog executionLog, Exception e) {
         jobService.updateJobStatus(jobId, JobStatus.FAILED);
         if (executionLog != null) {
             executionLogService.updateExecutionStatus(executionLog, JobStatus.FAILED, e.getMessage(), workerId);
+            publish(new JobExecutedEvent(
+                    job.getJobType(),
+                    job.getJobPriority(),
+                    JobStatus.FAILED,
+                    durationSince(executionLog.getStartedAt())
+            ));
         }
 
         if (shouldMarkDead(jobId, e)) {
@@ -163,6 +217,13 @@ public class WorkerService {
         long multiplier = 1L << Math.min(exponent, 30);
         long delayMs = Math.min(retryBaseDelayMs * multiplier, retryMaxDelayMs);
         return Duration.ofMillis(delayMs);
+    }
+
+    private Duration durationSince(Instant startedAt) {
+        if (startedAt == null) {
+            return Duration.ZERO;
+        }
+        return Duration.between(startedAt, Instant.now());
     }
 
     private boolean hasDoneMarker(String doneKey, UUID jobId) {
@@ -212,6 +273,10 @@ public class WorkerService {
 
     private boolean shouldUseDoneMarker(Job job) {
         return !jobService.hasCronExpression(job);
+    }
+
+    private void publish(Object event) {
+        eventPublisher.publishEvent(event);
     }
 
 }

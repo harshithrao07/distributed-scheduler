@@ -8,9 +8,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.UUID;
 
@@ -31,7 +35,7 @@ class ApiExceptionHandlerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new JobController(jobService))
+                .standaloneSetup(new JobController(jobService), new MissingResourceController())
                 .setControllerAdvice(new ApiExceptionHandler())
                 .build();
     }
@@ -68,6 +72,14 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    void noResourceFoundReturnsNotFoundResponse() throws Exception {
+        mockMvc.perform(get("/missing-resource"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.path").value("/missing-resource"));
+    }
+
+    @Test
     void illegalStateReturnsConflictResponse() throws Exception {
         UUID jobId = UUID.randomUUID();
         when(jobService.cancelJob(jobId)).thenThrow(new IllegalStateException("RUNNING jobs cannot be canceled"));
@@ -95,5 +107,14 @@ class ApiExceptionHandlerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.error").value("INTERNAL_SERVER_ERROR"))
                 .andExpect(jsonPath("$.message").value("An unexpected error occurred"));
+    }
+
+    @RestController
+    private static class MissingResourceController {
+
+        @GetMapping("/missing-resource")
+        void missingResource() throws NoResourceFoundException {
+            throw new NoResourceFoundException(HttpMethod.GET, "/missing-resource", "No static resource /missing-resource.");
+        }
     }
 }

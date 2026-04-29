@@ -21,6 +21,11 @@ import com.job.scheduler.enums.DeadLetterStatus;
 import com.job.scheduler.enums.JobPriority;
 import com.job.scheduler.enums.JobStatus;
 import com.job.scheduler.enums.JobType;
+import com.job.scheduler.monitoring.events.JobCanceledEvent;
+import com.job.scheduler.monitoring.events.JobDeadLetteredEvent;
+import com.job.scheduler.monitoring.events.JobDispatchedEvent;
+import com.job.scheduler.monitoring.events.JobRequeuedEvent;
+import com.job.scheduler.monitoring.events.JobSubmittedEvent;
 import com.job.scheduler.repository.ExecutionLogRepository;
 import com.job.scheduler.repository.JobRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -29,7 +34,8 @@ import jakarta.transaction.Transactional;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -47,7 +53,6 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class JobService {
     private static final String CREATED_AT_FIELD = "createdAt";
     private static final String JOB_NOT_FOUND_MESSAGE = "Job does not exist";
@@ -56,6 +61,32 @@ public class JobService {
     private final ObjectMapper objectMapper;
     private final ExecutionLogRepository executionLogRepository;
     private final Validator validator;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    public JobService(
+            JobRepository jobRepository,
+            ObjectMapper objectMapper,
+            ExecutionLogRepository executionLogRepository,
+            Validator validator,
+            ApplicationEventPublisher eventPublisher
+    ) {
+        this.jobRepository = jobRepository;
+        this.objectMapper = objectMapper;
+        this.executionLogRepository = executionLogRepository;
+        this.validator = validator;
+        this.eventPublisher = eventPublisher;
+    }
+
+    public JobService(
+            JobRepository jobRepository,
+            ObjectMapper objectMapper,
+            ExecutionLogRepository executionLogRepository,
+            Validator validator
+    ) {
+        this(jobRepository, objectMapper, executionLogRepository, validator, event -> {
+        });
+    }
 
     public UUID submitJob(JobRequestDTO jobRequestDTO) {
         validateTypedPayload(jobRequestDTO.jobType(), jobRequestDTO.payload());
@@ -81,6 +112,7 @@ public class JobService {
 
         try {
             Job savedJob = jobRepository.save(job);
+            publish(new JobSubmittedEvent(savedJob.getJobType(), savedJob.getJobPriority()));
             return savedJob.getId();
         } catch (DataIntegrityViolationException exception) {
             UUID duplicateJobId = findExistingJobId(jobRequestDTO.idempotencyKey());
@@ -227,6 +259,7 @@ public class JobService {
         requeuedJob.setRequeuedAt(Instant.now());
 
         Job savedJob = jobRepository.save(requeuedJob);
+        publish(new JobRequeuedEvent(savedJob.getJobType(), savedJob.getJobPriority()));
         return new RequeueJobResponseDTO(savedJob.getId());
     }
 
@@ -252,6 +285,7 @@ public class JobService {
         job.setLastErrorMessage("Canceled by request");
 
         Job savedJob = jobRepository.save(job);
+        publish(new JobCanceledEvent(savedJob.getJobType(), savedJob.getJobPriority()));
         return new CancelJobResponseDTO(savedJob.getId(), savedJob.getJobStatus());
     }
 
@@ -322,6 +356,7 @@ public class JobService {
         job.setLastErrorMessage(errorMessage);
         markDeadLetterPending(job, errorMessage);
         jobRepository.save(job);
+        publish(new JobDeadLetteredEvent(job.getJobType(), job.getJobPriority()));
     }
 
     @Transactional
@@ -385,12 +420,22 @@ public class JobService {
     }
 
     @Transactional
+    public void markDispatchQueued(UUID jobId) {
+        Job job = findById(jobId);
+        job.setJobStatus(JobStatus.QUEUED);
+        job.setNextRunAt(null);
+        job.setQueuedAt(Instant.now());
+        jobRepository.save(job);
+    }
+
+    @Transactional
     public void markDispatchSucceeded(UUID jobId) {
         Job job = findById(jobId);
         job.setJobStatus(JobStatus.QUEUED);
         job.setNextRunAt(null);
         job.setQueuedAt(Instant.now());
         jobRepository.save(job);
+        publish(new JobDispatchedEvent(job.getJobType(), job.getJobPriority()));
     }
 
     @Transactional
@@ -632,5 +677,9 @@ public class JobService {
         } catch (Exception e) {
             throw new IllegalStateException("Could not deserialize persisted job payload", e);
         }
+    }
+
+    private void publish(Object event) {
+        eventPublisher.publishEvent(event);
     }
 }

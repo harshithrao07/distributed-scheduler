@@ -49,6 +49,8 @@ Useful local URLs:
 - API base URL: `http://localhost:8080/app/v1`
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- Health: `http://localhost:8080/actuator/health`
+- Prometheus metrics: `http://localhost:8080/actuator/prometheus`
 
 Local services:
 
@@ -58,6 +60,7 @@ Local services:
 | PostgreSQL | `5432` | Durable job and execution log storage |
 | Kafka | `9092` | Job queue, high-priority queue, and DLQ |
 | Redis | `6379` | Worker locks and idempotency markers |
+| Prometheus | `9090` | Scrapes application and scheduler metrics |
 
 Stop the stack with `docker compose down`. Use `docker compose down -v` when you want a clean database, Kafka log, and Redis state.
 
@@ -152,8 +155,8 @@ sequenceDiagram
     API-->>Client: jobId
 
     Sched->>DB: Poll due PENDING jobs
-    Sched->>Kafka: Publish JobDispatchEvent
     Sched->>DB: Mark job QUEUED
+    Sched->>Kafka: Publish JobDispatchEvent
 
     Kafka->>Worker: Deliver job event
     Worker->>Redis: Check done marker and acquire lock
@@ -280,9 +283,10 @@ Jobs survive Kafka outages. If Kafka is unavailable at dispatch time, the job st
 ```mermaid
 flowchart LR
     A["Job persisted<br/>as PENDING"] --> B["Scheduler polls<br/>due jobs"]
-    B --> C{"Kafka publish<br/>succeeds?"}
-    C -->|yes| D["Mark QUEUED"]
-    C -->|no| E["Keep PENDING<br/>advance nextRunAt"]
+    B --> D["Mark QUEUED<br/>before publish"]
+    D --> C{"Kafka publish<br/>succeeds?"}
+    C -->|yes| F["Keep QUEUED<br/>worker can process"]
+    C -->|no| E["Reset to PENDING<br/>advance nextRunAt"]
     E --> B
 ```
 
@@ -334,6 +338,8 @@ OpenAPI documentation is generated automatically from the Spring MVC controllers
 
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- Health: `http://localhost:8080/actuator/health`
+- Prometheus metrics: `http://localhost:8080/actuator/prometheus`
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -346,6 +352,37 @@ OpenAPI documentation is generated automatically from the Spring MVC controllers
 | `POST` | `/app/v1/jobs/{jobId}/cancel` | Cancel a pending or queued job |
 | `GET` | `/app/v1/dlq` | Inspect dead-letter jobs with pagination and filters |
 | `GET` | `/app/v1/dlq/{jobId}` | Inspect one dead-letter job with execution logs |
+
+### Metrics
+
+Prometheus metrics are exposed through Spring Boot Actuator:
+
+- Prometheus scrape endpoint: `http://localhost:8080/actuator/prometheus`
+- Prometheus UI: `http://localhost:9090`
+
+Scheduler-specific metrics:
+
+| Metric | Type | Purpose |
+|---|---|---|
+| `scheduler_jobs_submitted_total` | Counter | Jobs accepted by the API |
+| `scheduler_jobs_dispatched_total` | Counter | Jobs successfully published to Kafka |
+| `scheduler_jobs_executed_total` | Counter | Worker executions by result |
+| `scheduler_job_execution_seconds` | Timer | Worker handler execution duration |
+| `scheduler_jobs_dead_lettered_total` | Counter | Jobs moved to DEAD/DLQ state |
+| `scheduler_jobs_requeued_total` | Counter | Dead jobs requeued by API |
+| `scheduler_jobs_canceled_total` | Counter | Jobs canceled by API |
+| `scheduler_jobs_status` | Gauge | Current job count by status |
+
+Useful PromQL examples:
+
+```promql
+rate(scheduler_jobs_submitted_total[5m])
+rate(scheduler_jobs_executed_total{result="SUCCESS"}[5m])
+rate(scheduler_jobs_executed_total{result="FAILED"}[5m])
+scheduler_jobs_status{status="PENDING"}
+scheduler_jobs_status{status="DEAD"}
+histogram_quantile(0.95, rate(scheduler_job_execution_seconds_bucket[5m]))
+```
 
 ### List Jobs Query Parameters
 
@@ -585,6 +622,24 @@ spring.profiles.default=local
 scheduler.enabled=${SCHEDULER_ENABLED:true}
 scheduler.worker-id=${SCHEDULER_WORKER_ID:worker-1}
 
+# Kafka serialization
+spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.UUIDSerializer
+spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
+spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.UUIDDeserializer
+spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer
+spring.kafka.consumer.properties.spring.json.value.default.type=com.job.scheduler.dto.JobDispatchEvent
+spring.kafka.consumer.properties.spring.json.trusted.packages=com.job.scheduler.dto,com.job.scheduler.enums
+spring.kafka.consumer.auto-offset-reset=earliest
+
+# Actuator
+management.endpoints.web.exposure.include=health,info,prometheus
+management.endpoint.health.probes.enabled=true
+management.endpoint.health.show-components=always
+management.endpoint.health.show-details=never
+management.health.discovery.enabled=false
+management.health.redis.enabled=true
+management.info.env.enabled=true
+
 # Retry backoff
 scheduler.retry.base-delay-ms=1000
 scheduler.retry.max-delay-ms=30000
@@ -624,7 +679,7 @@ Profile-specific configuration lives in:
 - `application-test.properties` - test-focused defaults
 - `application-prod.properties` - environment-variable-driven production settings
 
-Due-job dispatch uses atomic PostgreSQL row claiming with `FOR UPDATE SKIP LOCKED`. Multiple scheduler instances can run with `scheduler.enabled=true`; each poll claims a bounded batch of due `PENDING` jobs and moves their `nextRunAt` forward before publishing to Kafka. The database row lock is held only for the claim transaction, not while Kafka publishing is in progress. If publish succeeds, the job becomes `QUEUED`; if the scheduler crashes or Kafka publish fails, the job becomes due again after `scheduler.due-job.dispatch-retry-delay-ms`.
+Due-job dispatch uses atomic PostgreSQL row claiming with `FOR UPDATE SKIP LOCKED`. Multiple scheduler instances can run with `scheduler.enabled=true`; each poll claims a bounded batch of due `PENDING` jobs and moves them to `QUEUED` before publishing to Kafka. That ordering prevents a fast Kafka consumer from seeing a still-`PENDING` job. If publish fails, the scheduler resets the job to `PENDING` and makes it due again after `scheduler.due-job.dispatch-retry-delay-ms`.
 
 ---
 
@@ -640,7 +695,7 @@ entity/       JPA entities
 enums/        JobStatus, JobType, JobPriority, DeadLetterStatus
 exception/    Domain exceptions
 handlers/     Per-job-type handlers and JobHandlerRouter
-monitoring/   Redis-aware Kafka listener pause/resume
+monitoring/   Health indicators, metrics, events, and Redis-aware Kafka listener pause/resume
 producers/    Kafka producer wrapper
 repository/   Spring Data JPA repositories
 scheduler/    Due-job dispatcher, watchdogs, DLQ publisher
@@ -671,6 +726,9 @@ utility/      Key builders for locks and done markers
 - Single-scheduler-instance flag
 - `SEND_EMAIL`, `WEBHOOK`, and `CLEANUP` handlers
 - Docker Compose for the full local stack: app, PostgreSQL, Kafka, and Redis
+- Spring Boot Actuator health and info endpoints
+- Prometheus scrape endpoint and Docker Compose Prometheus service
+- Scheduler-specific Prometheus metrics backed by domain events
 - Pagination and filtering for the job list API
 - Cancellation support for pending and queued jobs
 - Unit tests for services, handlers, producers, and controllers

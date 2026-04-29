@@ -49,6 +49,7 @@ public class DueJobSchedulerService {
         for (Job job : dueJobs) {
             JobDispatchEvent event = new JobDispatchEvent(job.getId(), job.getJobType());
             CompletableFuture<Void> sendFuture;
+            jobService.markDispatchQueued(job.getId());
 
             if (job.getJobPriority() == JobPriority.HIGH) {
                 sendFuture = jobQueueProducer.sendToHighPriorityQueue(event);
@@ -59,6 +60,12 @@ public class DueJobSchedulerService {
             sendFuture.whenComplete((ignored, ex) -> {
                 if (ex == null) {
                     jobService.markDispatchSucceeded(job.getId());
+                } else {
+                    jobService.scheduleRetry(
+                            job.getId(),
+                            Instant.now().plusMillis(dispatchRetryDelayMs),
+                            null
+                    );
                 }
             });
         }

@@ -24,6 +24,8 @@ public interface JobRepository extends JpaRepository<Job, UUID>, JpaSpecificatio
 
     Optional<Job> findByIdempotencyKey(String idempotencyKey);
 
+    long countByJobStatus(JobStatus jobStatus);
+
     @Query(value = """
             UPDATE jobs
             SET next_run_at = :retryAt,

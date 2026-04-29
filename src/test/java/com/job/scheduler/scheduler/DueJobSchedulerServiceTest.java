@@ -67,6 +67,7 @@ class DueJobSchedulerServiceTest {
         verify(jobRepository, never()).claimDueJobsForDispatch(any(), any(), any(Integer.class));
         verify(jobQueueProducer, never()).sendToMainQueue(any());
         verify(jobQueueProducer, never()).sendToHighPriorityQueue(any());
+        verify(jobService, never()).markDispatchQueued(any());
         verify(jobService, never()).markDispatchSucceeded(any());
     }
 
@@ -100,6 +101,7 @@ class DueJobSchedulerServiceTest {
         ArgumentCaptor<JobDispatchEvent> eventCaptor = ArgumentCaptor.forClass(JobDispatchEvent.class);
         verify(jobQueueProducer).sendToHighPriorityQueue(eventCaptor.capture());
         verify(jobQueueProducer, never()).sendToMainQueue(any());
+        verify(jobService).markDispatchQueued(jobId);
         verify(jobService).markDispatchSucceeded(jobId);
 
         JobDispatchEvent event = eventCaptor.getValue();
@@ -122,6 +124,7 @@ class DueJobSchedulerServiceTest {
         ArgumentCaptor<JobDispatchEvent> eventCaptor = ArgumentCaptor.forClass(JobDispatchEvent.class);
         verify(jobQueueProducer).sendToMainQueue(eventCaptor.capture());
         verify(jobQueueProducer, never()).sendToHighPriorityQueue(any());
+        verify(jobService).markDispatchQueued(jobId);
         verify(jobService).markDispatchSucceeded(jobId);
 
         JobDispatchEvent event = eventCaptor.getValue();
@@ -130,7 +133,7 @@ class DueJobSchedulerServiceTest {
     }
 
     @Test
-    void dispatchDueJobsDoesNotMarkJobQueuedWhenKafkaSendFails() {
+    void dispatchDueJobsMovesJobBackToRetryWhenKafkaSendFails() {
         UUID jobId = UUID.randomUUID();
         Job job = job(jobId, JobPriority.LOW, JobType.WEBHOOK);
 
@@ -142,7 +145,9 @@ class DueJobSchedulerServiceTest {
         dueJobSchedulerService.dispatchDueJobs();
 
         verify(jobQueueProducer).sendToMainQueue(any(JobDispatchEvent.class));
+        verify(jobService).markDispatchQueued(jobId);
         verify(jobService, never()).markDispatchSucceeded(jobId);
+        verify(jobService).scheduleRetry(eq(jobId), any(Instant.class), eq(null));
     }
 
     private Job job(UUID id, JobPriority priority, JobType type) {
