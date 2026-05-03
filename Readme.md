@@ -772,7 +772,7 @@ utility/      Key builders for locks and done markers
 - The dispatcher writes job state synchronously *before* publishing to Kafka, and the success branch of the publish callback is intentionally a no-op. The earlier "mark dispatched again on success" callback was removed because it raced with the worker's `SUCCESS` update under high listener concurrency, leaking ~1.4% of jobs to a stuck-`QUEUED` state with execution log already `SUCCESS`.
 - The worker hot path is two PostgreSQL transactions, not five: `markJobStartingAtomic` collapses `status→RUNNING + create execution_log + log→RUNNING`, and `markJobCompletedAtomic` collapses `log→SUCCESS + status→SUCCESS` (or cron rescheduling). The handler call itself sits between the two transactions so no DB connection is held during network I/O.
 - Saturation walks up the stack as you tune. With the default 5s poll/100-claim dispatcher, the bottleneck is dispatch (~20 jobs/s ceiling). Bumping to 500ms/500-claim moves the bottleneck to worker concurrency (~50 jobs/s with 1 listener thread, ~200 jobs/s with 12). At 200+ jobs/s the next bottleneck is the Hikari pool and per-job DB transactions, addressed by pool sizing and the atomic-transaction reduction above.
-- Overload is lossless. At 300 jobs/s on a single-instance stack — well past worker capacity — every submission still completes, just at degraded p99 latency. PostgreSQL is source of truth, so backpressure manifests as queue depth, not lost work.
+- Overload is lossless. At 400 jobs/s on a single-instance stack — well past worker capacity — every submission still completes (24,001/24,001 in the benchmark), just at degraded p99 latency. PostgreSQL is source of truth, so backpressure manifests as queue depth, not lost work.
 
 ---
 
