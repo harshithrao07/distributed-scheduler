@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python d:/scheduler/scripts/update-coverage-readme.py)",
+      "Bash(py -3 d:/scheduler/scripts/update-coverage-readme.py)"
+    ]
+  }
+}
