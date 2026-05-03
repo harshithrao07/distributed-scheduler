@@ -54,6 +54,7 @@ services:
   kafka:
     image: apache/kafka:4.1.2
     container_name: scheduler-kafka
+    hostname: kafka
     ports:
       - "9092:9092"
     environment:
@@ -69,7 +70,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_NUM_PARTITIONS: 12
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:

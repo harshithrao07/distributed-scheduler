@@ -128,14 +128,8 @@ public class WorkerService {
                 return;
             }
 
-            // Update the job status from PENDING to RUNNING
-            jobService.updateJobStatus(jobId, JobStatus.RUNNING);
-
-            // Create a new ExecutionLog entry
-            executionLog = executionLogService.createEntry(jobId);
-
-            // Update execution status to RUNNING
-            executionLogService.updateExecutionStatus(executionLog, JobStatus.RUNNING, null, workerId);
+            // Atomic: flip job to RUNNING + create execution log + log->RUNNING in one tx
+            executionLog = jobService.markJobStartingAtomic(jobId, workerId);
 
             // Route it to right per type handler
             Instant executionStartedAt = Instant.now();
@@ -147,7 +141,7 @@ public class WorkerService {
                     Duration.between(executionStartedAt, Instant.now())
             ));
 
-            handleSuccessfulExecution(job, jobId, executionLog, doneKey);
+            handleSuccessfulExecution(jobId, executionLog, doneKey);
         } catch (Exception e) {
             handleFailedExecution(job, jobId, executionLog, e);
         } finally {
@@ -158,14 +152,9 @@ public class WorkerService {
         }
     }
 
-    private void handleSuccessfulExecution(Job job, UUID jobId, ExecutionLog executionLog, String doneKey) {
-        executionLogService.updateExecutionStatus(executionLog, JobStatus.SUCCESS, null, workerId);
-        if (jobService.hasCronExpression(job)) {
-            jobService.scheduleNextCronRun(jobId);
-            return;
-        }
-
-        jobService.updateJobStatus(jobId, JobStatus.SUCCESS);
+    private void handleSuccessfulExecution(UUID jobId, ExecutionLog executionLog, String doneKey) {
+        // One transaction: execution log -> SUCCESS + (job -> SUCCESS or schedule next cron run)
+        jobService.markJobCompletedAtomic(jobId, executionLog, workerId);
         markJobDoneBestEffort(doneKey, jobId);
     }
 

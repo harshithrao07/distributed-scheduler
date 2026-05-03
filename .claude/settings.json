@@ -2,7 +2,31 @@
   "permissions": {
     "allow": [
       "Bash(python d:/scheduler/scripts/update-coverage-readme.py)",
-      "Bash(py -3 d:/scheduler/scripts/update-coverage-readme.py)"
+      "Bash(py -3 d:/scheduler/scripts/update-coverage-readme.py)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "PowerShell($runId = 'bench-1777827333'; $sqlPath = 'D:\\\\scheduler\\\\bench\\\\measure-e2e.sql'; $e2e = Get-Content -Raw $sqlPath | docker exec -i scheduler-postgres psql -U postgres -d jobscheduler -v \"run_id=$runId\" -A -F '|' -t; $e2e)",
+      "PowerShell($r = Invoke-WebRequest -Uri 'http://localhost:8080/actuator/prometheus' -UseBasicParsing; \\($r.Content -split \"`n\"\\) | Select-String -Pattern '^scheduler_' | Select-Object -First 20)",
+      "PowerShell(docker compose up --build -d 2>&1)",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(60\\); $up = $false; while \\(\\(Get-Date\\) -lt $deadline\\) { try { $h = Invoke-RestMethod -Uri 'http://localhost:8080/actuator/health' -TimeoutSec 3; if \\($h.status -eq 'UP'\\) { $up = $true; break } } catch { Start-Sleep 2 } }; if \\($up\\) { 'app is UP' } else { 'app did not become healthy in 60s'; exit 1 })",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 200 -Duration 60s -DrainTimeoutSec 180 2>&1)",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 200 -Duration 60s -DrainTimeoutSec 240 2>&1)",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 30 -Duration 60s -DrainTimeoutSec 120 2>&1)",
+      "PowerShell(docker compose down -v 2>&1)",
+      "PowerShell(\"---\")",
+      "PowerShell(docker exec scheduler-postgres psql -U postgres -d jobscheduler -c \"SELECT MIN\\(created_at\\) AS first_stuck, MAX\\(created_at\\) AS last_stuck, MIN\\(queued_at\\) AS first_queued, MAX\\(queued_at\\) AS last_queued FROM jobs WHERE idempotency_key LIKE 'bench-1777828403-%' AND job_status='QUEUED'\")",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(120\\); $up = $false; while \\(\\(Get-Date\\) -lt $deadline\\) { try { $h = Invoke-RestMethod -Uri 'http://localhost:8080/actuator/health' -TimeoutSec 3; if \\($h.status -eq 'UP'\\) { $up = $true; break } } catch { Start-Sleep 3 } }; if \\($up\\) { '--app UP--'; .\\\\bench\\\\run-bench.ps1 -Rps 100 -Duration 60s -DrainTimeoutSec 180 2>&1 | Select-Object -Last 18 } else { 'app NOT healthy' })",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(120\\); $up = $false; while \\(\\(Get-Date\\) -lt $deadline\\) { try { $h = Invoke-RestMethod -Uri 'http://localhost:8080/actuator/health' -TimeoutSec 3; if \\($h.status -eq 'UP'\\) { $up = $true; break } } catch { Start-Sleep 3 } }; if \\($up\\) { '--app UP, running 200 rps × 60s--'; .\\\\bench\\\\run-bench.ps1 -Rps 200 -Duration 60s -DrainTimeoutSec 240 2>&1 | Select-Object -Last 14 } else { 'app NOT healthy' })",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 300 -Duration 60s -DrainTimeoutSec 240 2>&1)",
+      "PowerShell(try { \\(Invoke-RestMethod -Uri 'http://localhost:8080/actuator/health' -TimeoutSec 3\\).status } catch { 'app DOWN, run docker compose up -d first' })",
+      "PowerShell(.\\\\bench\\\\recovery-test.ps1 -JobCount 200 -OutageSeconds 60 -RecoveryBudget 180 2>&1)",
+      "PowerShell(docker exec scheduler-postgres psql -U postgres -d jobscheduler -c \"SELECT id, job_status, idempotency_key, created_at, queued_at, started_at, completed_at FROM jobs WHERE idempotency_key LIKE 'recov-1777830383-%' AND job_status NOT IN \\('SUCCESS','DEAD','CANCELED'\\)\")",
+      "PowerShell(docker exec scheduler-postgres psql -U postgres -d jobscheduler -c \"SELECT execution_status, attempt_number, started_at, completed_at, error_message FROM execution_logs el JOIN jobs j ON j.id=el.job_id WHERE j.idempotency_key LIKE 'recov-1777830383-%' AND j.job_status NOT IN \\('SUCCESS','DEAD'\\)\")",
+      "PowerShell(docker exec scheduler-postgres psql -U postgres -d jobscheduler -c \"SELECT el.execution_status, el.attempt_number, el.started_at, el.completed_at, el.error_message FROM execution_logs el JOIN jobs j ON j.id=el.job_id WHERE j.idempotency_key='recov-1777830383-21'\")",
+      "PowerShell(.\\\\mvnw -B test 2>&1)",
+      "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(120\\); $up = $false; while \\(\\(Get-Date\\) -lt $deadline\\) { try { $h = Invoke-RestMethod -Uri 'http://localhost:8080/actuator/health' -TimeoutSec 3; if \\($h.status -eq 'UP'\\) { $up = $true; break } } catch { Start-Sleep 3 } }; if \\($up\\) { 'app UP - warmup run \\(will discard\\)'; .\\\\bench\\\\run-bench.ps1 -Rps 200 -Duration 60s -DrainTimeoutSec 180 2>&1 | Select-Object -Last 8 } else { 'app NOT healthy' })",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 300 -Duration 60s -DrainTimeoutSec 180 2>&1)",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 400 -Duration 60s -DrainTimeoutSec 240 2>&1)"
     ]
   }
 }

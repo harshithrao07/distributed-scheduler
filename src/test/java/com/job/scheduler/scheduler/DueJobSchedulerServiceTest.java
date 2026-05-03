@@ -102,7 +102,7 @@ class DueJobSchedulerServiceTest {
         verify(jobQueueProducer).sendToHighPriorityQueue(eventCaptor.capture());
         verify(jobQueueProducer, never()).sendToMainQueue(any());
         verify(jobService).markDispatchQueued(jobId);
-        verify(jobService).markDispatchSucceeded(jobId);
+        verify(jobService, never()).markDispatchSucceeded(jobId);
 
         JobDispatchEvent event = eventCaptor.getValue();
         assertThat(event.jobId()).isEqualTo(jobId);
@@ -125,7 +125,7 @@ class DueJobSchedulerServiceTest {
         verify(jobQueueProducer).sendToMainQueue(eventCaptor.capture());
         verify(jobQueueProducer, never()).sendToHighPriorityQueue(any());
         verify(jobService).markDispatchQueued(jobId);
-        verify(jobService).markDispatchSucceeded(jobId);
+        verify(jobService, never()).markDispatchSucceeded(jobId);
 
         JobDispatchEvent event = eventCaptor.getValue();
         assertThat(event.jobId()).isEqualTo(jobId);

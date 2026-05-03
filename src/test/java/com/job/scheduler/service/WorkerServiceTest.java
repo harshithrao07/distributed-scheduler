@@ -138,16 +138,13 @@ class WorkerServiceTest {
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-1");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
-        when(executionLogService.createEntry(jobId)).thenReturn(executionLog);
-        when(jobService.hasCronExpression(job)).thenReturn(false);
+        when(jobService.markJobStartingAtomic(jobId, "worker-test")).thenReturn(executionLog);
 
         workerService.processJob(event);
 
-        verify(jobService).updateJobStatus(jobId, JobStatus.RUNNING);
-        verify(executionLogService).updateExecutionStatus(executionLog, JobStatus.RUNNING, null, "worker-test");
+        verify(jobService).markJobStartingAtomic(jobId, "worker-test");
         verify(jobHandlerRouter).route(event);
-        verify(executionLogService).updateExecutionStatus(executionLog, JobStatus.SUCCESS, null, "worker-test");
-        verify(jobService).updateJobStatus(jobId, JobStatus.SUCCESS);
+        verify(jobService).markJobCompletedAtomic(jobId, executionLog, "worker-test");
         verify(valueOperations).set(doneKey, "true", Duration.ofHours(24));
         verify(redisLockService).releaseLock("job-lock:" + jobId, "token-1");
     }
@@ -163,13 +160,14 @@ class WorkerServiceTest {
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-2");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
-        when(executionLogService.createEntry(jobId)).thenReturn(executionLog);
+        when(jobService.markJobStartingAtomic(jobId, "worker-test")).thenReturn(executionLog);
         when(jobService.hasCronExpression(job)).thenReturn(true);
 
         workerService.processJob(event);
 
-        verify(jobService).scheduleNextCronRun(jobId);
-        verify(jobService, never()).updateJobStatus(jobId, JobStatus.SUCCESS);
+        // markJobCompletedAtomic handles cron rescheduling internally based on the
+        // job's cronExpression — the worker no longer branches on it.
+        verify(jobService).markJobCompletedAtomic(jobId, executionLog, "worker-test");
         verify(valueOperations, never()).set(anyString(), eq("true"), any(Duration.class));
     }
 
@@ -185,7 +183,7 @@ class WorkerServiceTest {
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-3");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
-        when(executionLogService.createEntry(jobId)).thenReturn(executionLog);
+        when(jobService.markJobStartingAtomic(jobId, "worker-test")).thenReturn(executionLog);
         org.mockito.Mockito.doThrow(new IllegalArgumentException("bad payload")).when(jobHandlerRouter).route(event);
 
         workerService.processJob(event);
@@ -209,7 +207,7 @@ class WorkerServiceTest {
         when(redisLockService.acquireLock(eq("job-lock:" + jobId), any(Duration.class))).thenReturn("token-4");
         when(jobService.findById(jobId)).thenReturn(job);
         when(jobService.maxAttemptsExceeded(jobId)).thenReturn(false);
-        when(executionLogService.createEntry(jobId)).thenReturn(executionLog);
+        when(jobService.markJobStartingAtomic(jobId, "worker-test")).thenReturn(executionLog);
         when(jobService.getAttemptCount(jobId)).thenReturn(1L);
         org.mockito.Mockito.doThrow(new RuntimeException("temporary failure")).when(jobHandlerRouter).route(event);
 
@@ -238,7 +236,7 @@ class WorkerServiceTest {
         workerService.processJob(event);
 
         verify(jobService).markJobDead(jobId, "Max attempts exceeded");
-        verify(executionLogService, never()).createEntry(any());
+        verify(jobService, never()).markJobStartingAtomic(any(), anyString());
         verify(redisLockService).releaseLock("job-lock:" + jobId, "token-5");
     }
 

@@ -58,15 +58,17 @@ public class DueJobSchedulerService {
             }
 
             sendFuture.whenComplete((ignored, ex) -> {
-                if (ex == null) {
-                    jobService.markDispatchSucceeded(job.getId());
-                } else {
+                if (ex != null) {
                     jobService.scheduleRetry(
                             job.getId(),
                             Instant.now().plusMillis(dispatchRetryDelayMs),
                             null
                     );
                 }
+                // Success path is intentionally a no-op: markDispatchQueued above already
+                // set status=QUEUED. Re-writing it here races with the worker, which can
+                // already be transitioning the job through RUNNING -> SUCCESS by the time
+                // this callback fires (especially with concurrent listeners and fast handlers).
             });
         }
     }

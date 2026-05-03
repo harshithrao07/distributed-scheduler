@@ -12,12 +12,12 @@ import org.springframework.stereotype.Component;
 public class JobQueueConsumer {
     private final WorkerService workerService;
 
-    @KafkaListener(id = "job-queue-worker", topics = Topics.TOPIC_JOB_QUEUE, groupId = "scheduler-group")
+    @KafkaListener(id = "job-queue-worker", topics = Topics.TOPIC_JOB_QUEUE, groupId = "scheduler-group", concurrency = "12")
     public void consumeJobFromQueue(JobDispatchEvent jobDispatchEvent) {
         workerService.processJob(jobDispatchEvent);
     }
 
-    @KafkaListener(id = "high-priority-job-queue-worker", topics = Topics.TOPIC_JOB_QUEUE_HIGH, groupId = "scheduler-group")
+    @KafkaListener(id = "high-priority-job-queue-worker", topics = Topics.TOPIC_JOB_QUEUE_HIGH, groupId = "scheduler-group", concurrency = "12")
     public void consumeJobFromHighPriorityQueue(JobDispatchEvent jobDispatchEvent) {
         workerService.processJob(jobDispatchEvent);
     }

@@ -1,0 +1,10 @@
+services:
+  echo:
+    image: mendhak/http-https-echo:35
+    container_name: scheduler-bench-echo
+    environment:
+      HTTP_PORT: 8080
+      LOG_WITHOUT_NEWLINE: "true"
+      DISABLE_REQUEST_LOGS: "true"
+    ports:
+      - "8081:8080"

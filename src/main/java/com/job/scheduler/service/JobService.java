@@ -44,6 +44,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -404,6 +405,75 @@ public class JobService {
             job.setLastErrorMessage(null);
         }
 
+        jobRepository.save(job);
+    }
+
+    // Combined start-of-execution write: flips the job from QUEUED -> RUNNING and creates
+    // its execution log row in a single transaction. Replaces three separate transactions
+    // (updateJobStatus + ExecutionLogService.createEntry + ExecutionLogService.updateExecutionStatus)
+    // along the worker hot path. Returns the new ExecutionLog so the caller can update it on completion.
+    @Transactional
+    public ExecutionLog markJobStartingAtomic(UUID jobId, String workerId) {
+        Job job = findById(jobId);
+        Instant now = Instant.now();
+
+        job.setJobStatus(JobStatus.RUNNING);
+        job.setStartedAt(now);
+        job.setCompletedAt(null);
+        job.setNextRunAt(null);
+        job.setQueuedAt(null);
+        jobRepository.save(job);
+
+        ExecutionLog log = new ExecutionLog();
+        log.setJobDetails(job);
+        long retryCount = executionLogRepository.countByJobId(jobId);
+        log.setAttemptNumber((int) (retryCount + 1));
+        log.setExecutionStatus(JobStatus.RUNNING);
+        log.setWorkerId(workerId);
+        log.setStartedAt(now);
+        log.setCompletedAt(null);
+        log.setDurationMs(null);
+        log.setErrorMessage(null);
+        return executionLogRepository.save(log);
+    }
+
+    // Combined end-of-execution write for the SUCCESS path. Marks the execution log SUCCESS
+    // and either flips the job to SUCCESS (one-shot) or schedules the next cron fire (recurring),
+    // all in a single transaction.
+    @Transactional
+    public void markJobCompletedAtomic(UUID jobId, ExecutionLog executionLog, String workerId) {
+        Job job = findById(jobId);
+        Instant now = Instant.now();
+
+        executionLog.setExecutionStatus(JobStatus.SUCCESS);
+        executionLog.setWorkerId(workerId);
+        executionLog.setCompletedAt(now);
+        executionLog.setErrorMessage(null);
+        if (executionLog.getStartedAt() != null) {
+            executionLog.setDurationMs(Duration.between(executionLog.getStartedAt(), now).toMillis());
+        }
+        executionLogRepository.save(executionLog);
+
+        if (hasCronExpression(job)) {
+            CronExpression cronExpression = parseCronExpression(job.getCronExpression());
+            if (cronExpression == null) {
+                job.setJobStatus(JobStatus.SUCCESS);
+                job.setNextRunAt(null);
+                job.setCompletedAt(now);
+            } else {
+                job.setJobStatus(JobStatus.PENDING);
+                job.setNextRunAt(nextRunAt(cronExpression));
+                job.setQueuedAt(null);
+                job.setStartedAt(null);
+                job.setCompletedAt(null);
+                job.setLastErrorMessage(null);
+            }
+        } else {
+            job.setJobStatus(JobStatus.SUCCESS);
+            job.setCompletedAt(now);
+            job.setNextRunAt(null);
+            job.setQueuedAt(null);
+        }
         jobRepository.save(job);
     }
 

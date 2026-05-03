@@ -13,7 +13,7 @@ public class KafkaConfig {
     @Bean
     public NewTopic jobQueueTopic() {
         return TopicBuilder.name(Topics.TOPIC_JOB_QUEUE)
-                .partitions(3)
+                .partitions(12)
                 .replicas(1)
                 .build();
     }
@@ -21,7 +21,7 @@ public class KafkaConfig {
     @Bean
     public NewTopic jobQueueHighTopic() {
         return TopicBuilder.name(Topics.TOPIC_JOB_QUEUE_HIGH)
-                .partitions(3)
+                .partitions(12)
                 .replicas(1)
                 .build();
     }
