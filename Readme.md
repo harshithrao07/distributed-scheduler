@@ -783,30 +783,31 @@ Latest JaCoCo run across the full Testcontainers-backed suite:
 
 | Metric | Covered | Total | Coverage |
 |---|---:|---:|---:|
-| Instructions | 2,803 | 3,726 | 75% |
+| Instructions | 2,773 | 3,733 | 74% |
 | Branches | 128 | 197 | 65% |
-| Lines | 593 | 844 | 70% |
-| Methods | 162 | 203 | 80% |
+| Lines | 584 | 845 | 69% |
+| Methods | 155 | 203 | 76% |
 | Classes | 57 | 58 | 98% |
 
 Per-package instruction coverage:
 
 | Package | Coverage |
 |---|---:|
-| `scheduler` (due-job, watchdogs, DLQ) | 100% |
-| `producers` | 100% |
+| `dto.payload` | 100% |
 | `enums` | 100% |
 | `monitoring.events` | 100% |
-| `dto.payload` | 100% |
+| `producers` | 100% |
+| `scheduler` (due-job, watchdogs, DLQ) | 100% |
 | `utility` | 100% |
 | `handlers` | 93% |
-| `dto` | 91% |
-| `controller` | 83% |
-| `monitoring` | 81% |
-| `exception` | 76% |
+| `dto` | 92% |
+| `controller` | 84% |
+| `monitoring` | 79% |
+| `exception` | 77% |
 | `service` (job lifecycle, worker, locks) | 66% |
-| `config` | 53% |
 | `consumers` | 50% |
+| `config` | 43% |
+| `com.job.scheduler` (root) | 38% |
 
 Open `target/site/jacoco/index.html` after `mvn test` for the drill-down view.
 
