@@ -863,10 +863,10 @@ Latest JaCoCo run across the full Testcontainers-backed suite:
 
 | Metric | Covered | Total | Coverage |
 |---|---:|---:|---:|
-| Instructions | 2,773 | 3,733 | 74% |
-| Branches | 128 | 197 | 65% |
-| Lines | 584 | 845 | 69% |
-| Methods | 155 | 203 | 76% |
+| Instructions | 2,828 | 3,862 | 73% |
+| Branches | 123 | 201 | 61% |
+| Lines | 605 | 885 | 68% |
+| Methods | 156 | 205 | 76% |
 | Classes | 57 | 58 | 98% |
 
 Per-package instruction coverage:
@@ -884,7 +884,7 @@ Per-package instruction coverage:
 | `controller` | 84% |
 | `monitoring` | 79% |
 | `exception` | 77% |
-| `service` (job lifecycle, worker, locks) | 66% |
+| `service` (job lifecycle, worker, locks) | 65% |
 | `consumers` | 50% |
 | `config` | 43% |
 | `com.job.scheduler` (root) | 38% |
