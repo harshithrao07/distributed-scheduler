@@ -50,13 +50,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if git diff --quiet -- README.md; then
+          readme="$(ls Readme.md README.md readme.md 2>/dev/null | head -n1)"
+          if [ -z "$readme" ]; then
+            echo "No README found; nothing to commit."
+            exit 0
+          fi
+          if git diff --quiet -- "$readme"; then
             echo "README coverage section already current; nothing to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md
+          git add "$readme"
           git commit -m "chore: refresh README coverage tables [skip ci]"
           git push origin HEAD:main
 

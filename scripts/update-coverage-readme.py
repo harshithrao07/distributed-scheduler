@@ -16,7 +16,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CSV_PATH = REPO_ROOT / "target" / "site" / "jacoco" / "jacoco.csv"
-README_PATH = REPO_ROOT / "README.md"
+
+
+def find_readme() -> Path | None:
+    for name in ("Readme.md", "README.md", "readme.md"):
+        candidate = REPO_ROOT / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+README_PATH = find_readme()
 START_MARKER = "<!-- COVERAGE-START -->"
 END_MARKER = "<!-- COVERAGE-END -->"
 
@@ -49,8 +59,8 @@ def main() -> int:
     if not CSV_PATH.exists():
         print(f"error: jacoco csv not found at {CSV_PATH}", file=sys.stderr)
         return 1
-    if not README_PATH.exists():
-        print(f"error: README not found at {README_PATH}", file=sys.stderr)
+    if README_PATH is None:
+        print(f"error: README not found under {REPO_ROOT}", file=sys.stderr)
         return 1
 
     totals = defaultdict(int)
