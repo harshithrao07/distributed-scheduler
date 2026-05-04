@@ -48,7 +48,7 @@ This is the metric backing the architectural claim "PostgreSQL is source of trut
 
 Numbers below are from this repo's actual benchmark runs (single-node Docker Desktop stack, 12-partition topics, listener `concurrency=12`, 30-connection HikariCP pool):
 
-> Built and load-tested a distributed job scheduler (Spring Boot, PostgreSQL, Kafka, Redis) processing **300 jobs/sec end-to-end** on a single-node Docker stack with **API submission p95 5.9 ms**, **end-to-end p95 708 ms / p99 929 ms**, and **100% completion across 18,000 submissions**; comfortable headline at 200 jobs/sec is **e2e p99 316 ms**, and the system stays lossless even past worker capacity (400 jobs/sec still completes 24,000/24,000).
+> Built and load-tested a distributed job scheduler (Spring Boot, PostgreSQL, Kafka, Redis) — single-instance sustains **300 jobs/sec** end-to-end with **API submission p95 5.9 ms**, **e2e p95 708 ms / p99 929 ms**, **100% completion across 18,000 submissions**. **Horizontally scaled to 3 replicas behind nginx LB**: same 300 rps drops to **e2e p95 169 ms / p99 206 ms** (4.5× tail-latency improvement) at 100% completion across 18,001 submissions; identified **PostgreSQL CPU as the architectural ceiling** (~250% CPU during the run, app tier at ~100% each) via live `docker stats` — the correct bottleneck to have, since PG is source of truth.
 
 > Diagnosed and fixed a write-after-write race in the Kafka dispatcher that leaked ~1.4% of jobs to a stuck-`QUEUED` state — surfaced only after raising listener concurrency from 1 → 12 — by removing a redundant idempotent producer-success callback that was overwriting the worker's `SUCCESS` update.
 

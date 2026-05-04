@@ -4,5 +4,11 @@ global:
 scrape_configs:
   - job_name: "scheduler"
     metrics_path: "/actuator/prometheus"
-    static_configs:
-      - targets: ["app:8080"]
+    # DNS SD: docker compose creates an A record for the `app` service that
+    # resolves to all replica IPs. Prometheus then scrapes each individually
+    # so per-instance counters can be summed correctly via PromQL.
+    dns_sd_configs:
+      - names: ["app"]
+        type: A
+        port: 8080
+        refresh_interval: 10s

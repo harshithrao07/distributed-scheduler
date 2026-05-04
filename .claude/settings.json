@@ -26,7 +26,13 @@
       "PowerShell(.\\\\mvnw -B test 2>&1)",
       "PowerShell($deadline = \\(Get-Date\\).AddSeconds\\(120\\); $up = $false; while \\(\\(Get-Date\\) -lt $deadline\\) { try { $h = Invoke-RestMethod -Uri 'http://localhost:8080/actuator/health' -TimeoutSec 3; if \\($h.status -eq 'UP'\\) { $up = $true; break } } catch { Start-Sleep 3 } }; if \\($up\\) { 'app UP - warmup run \\(will discard\\)'; .\\\\bench\\\\run-bench.ps1 -Rps 200 -Duration 60s -DrainTimeoutSec 180 2>&1 | Select-Object -Last 8 } else { 'app NOT healthy' })",
       "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 300 -Duration 60s -DrainTimeoutSec 180 2>&1)",
-      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 400 -Duration 60s -DrainTimeoutSec 240 2>&1)"
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 400 -Duration 60s -DrainTimeoutSec 240 2>&1)",
+      "PowerShell($r = Invoke-WebRequest -Uri \"https://api.github.com/repos/harshithrao07/distributed-scheduler/actions/runs?per_page=3\" -UseBasicParsing; \\($r.Content | ConvertFrom-Json\\).workflow_runs | Select-Object id,status,conclusion,created_at,head_sha | Format-List)",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 200 -Duration 30s -DrainTimeoutSec 120 2>&1)",
+      "PowerShell('--warmup at 200 rps \\(will discard\\)--')",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 600 -Duration 60s -DrainTimeoutSec 300 2>&1)",
+      "PowerShell(\"Per-instance distribution \\(worker_id from execution_logs\\):\")",
+      "PowerShell(.\\\\bench\\\\run-bench.ps1 -Rps 600 -Duration 60s -DrainTimeoutSec 240 2>&1)"
     ]
   }
 }
