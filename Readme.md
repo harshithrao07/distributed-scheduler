@@ -843,7 +843,7 @@ The bottleneck is **PostgreSQL CPU**, not the app tier or Kafka. With 3 schedule
 | Jobs submitted while Kafka down | **200 / 200 accepted** (0 API rejections) |
 | Outage duration | 60 s |
 | Drain time after Kafka restart | **~9 s** for 199/200 jobs (success went 0 → 139 → 199) |
-| Remaining 1 job | A single message lost during the abrupt Kafka stop/restart; recoverable by the `QUEUED` watchdog within its 5-min timeout, not by re-dispatch from Kafka |
+| Remaining 1 job | One job remained `QUEUED` after the abrupt Kafka stop/restart and was recoverable by the `QUEUED` watchdog within its 5-min timeout window |
 
 This is the architectural claim *PostgreSQL is source of truth, Kafka is delivery* turned into a measurement. The API stays up because submission writes only to PostgreSQL; the backlog drains automatically once Kafka returns; and the layered defense (Kafka redelivery + DB-backed dispatch + `QUEUED` watchdog) ensures even Kafka-side anomalies recover without manual intervention.
 

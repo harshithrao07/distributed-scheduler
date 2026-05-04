@@ -54,7 +54,7 @@ Numbers below are from this repo's actual benchmark runs (single-node Docker Des
 
 > Reduced per-job DB round-trips by collapsing the worker hot-path's start (`status→RUNNING` + create execution log + log→`RUNNING`) and finish (`log→SUCCESS` + `status→SUCCESS`) sequences from **5 transactions → 2 transactions**, dropping p99 e2e latency by 17% (1.59 s → 1.32 s).
 
-> Implemented PostgreSQL-backed dispatch so job submission is decoupled from Kafka availability — **accepted 200/200 jobs during a 60-second Kafka outage with 0 API rejections**, draining 199/200 within ~9 seconds of the broker returning; the 1 remaining job (a single message lost during the abrupt Kafka restart) was recoverable by the `QUEUED` watchdog without manual intervention, demonstrating the layered defense that keeps the system lossless across both Kafka outages and Kafka anomalies.
+> Implemented PostgreSQL-backed dispatch so job submission is decoupled from Kafka availability — **accepted 200/200 jobs during a 60-second Kafka outage with 0 API rejections**, draining 199/200 within ~9 seconds of the broker returning; the 1 remaining job stayed `QUEUED` after the abrupt restart and was recoverable by the `QUEUED` watchdog within its timeout window, demonstrating the layered defense (DB-backed dispatch + Kafka redelivery + watchdog) that keeps the system lossless without manual intervention.
 
 > Achieved **75% test coverage** (auto-regenerated in CI) across a Testcontainers integration suite covering PostgreSQL, Kafka, Redis, concurrency, and failure paths.
 
